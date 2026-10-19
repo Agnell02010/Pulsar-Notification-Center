@@ -23,6 +23,15 @@ const MPRIS_PATH = '/org/mpris/MediaPlayer2';
 const PLAYER_IFACE = 'org.mpris.MediaPlayer2.Player';
 const LG_UUID = 'liquid-glass@thinkingcoding1231.gmail.com';
 
+/* The world clock card's cities. The panel lists the same ones, so the list
+ * lives here once instead of inside the refresher. */
+const CITY_LIST = [
+    {name: 'Cupertino', tz: 'America/Los_Angeles'},
+    {name: 'Tokio', tz: 'Asia/Tokyo'},
+    {name: 'Sídney', tz: 'Australia/Sydney'},
+    {name: 'París', tz: 'Europe/Paris'},
+];
+
 /* i18n strings dictionary */
 const STRINGS = {
     es: {
@@ -66,6 +75,20 @@ const STRINGS = {
         PANEL_10DAY: 'Previsión de 10 días',
         PANEL_NO_DATA: 'Sin datos de previsión',
         PANEL_SOON: 'Panel en camino',
+        PANEL_OPEN_CALENDAR: 'Abrir Calendario',
+        PANEL_CALENDAR: 'Calendario',
+        PANEL_ALLDAY: 'Todo el día',
+        PANEL_OPEN_TASKS: 'Abrir Recordatorios',
+        PANEL_POWER_SETTINGS: 'Ajustes de energía',
+        PANEL_LOAD: 'Carga media',
+        PANEL_DISCHARGING: 'Descargando',
+        PANEL_ON_POWER: 'Conectado a la red',
+        PANEL_OPEN_CLOCKS: 'Abrir Relojes',
+        PANEL_OPEN_MONITOR: 'Abrir Monitor',
+        PANEL_PREVIOUS: 'Anterior',
+        PANEL_NEXT: 'Siguiente',
+        PANEL_PLAY: 'Reproducir',
+        PANEL_PAUSE: 'Pausa',
         CAL_DAYS: ['L', 'M', 'X', 'J', 'V', 'S', 'D'],
     },
     en: {
@@ -109,6 +132,20 @@ const STRINGS = {
         PANEL_10DAY: '10-Day Forecast',
         PANEL_NO_DATA: 'No forecast data',
         PANEL_SOON: 'Panel coming soon',
+        PANEL_OPEN_CALENDAR: 'Open Calendar',
+        PANEL_CALENDAR: 'Calendar',
+        PANEL_ALLDAY: 'All day',
+        PANEL_OPEN_TASKS: 'Open Reminders',
+        PANEL_POWER_SETTINGS: 'Energy Settings',
+        PANEL_LOAD: 'Load average',
+        PANEL_DISCHARGING: 'On battery',
+        PANEL_ON_POWER: 'On power',
+        PANEL_OPEN_CLOCKS: 'Open Clocks',
+        PANEL_OPEN_MONITOR: 'Open Monitor',
+        PANEL_PREVIOUS: 'Previous',
+        PANEL_NEXT: 'Next',
+        PANEL_PLAY: 'Play',
+        PANEL_PAUSE: 'Pause',
         CAL_DAYS: ['M', 'T', 'W', 'T', 'F', 'S', 'S'],
     }
 };
@@ -187,6 +224,9 @@ function icon(name, cls = '', size = 16) {
  *     rm /tmp/pulsar-nc-debug         # off
  */
 const DEBUG_FLAG = '/tmp/pulsar-nc-debug';
+/* A second, separate flag: when it exists, opening the drawer makes the
+ * extension walk through every widget panel in turn (see _provaPannelli). */
+const DEBUG_PANELS = '/tmp/pulsar-nc-debug-pannelli';
 
 function debugOn() {
     try {
@@ -286,6 +326,12 @@ class MacOSNotificationCenter {
         this._calendarProxy = null;
         this._lastCpuTotal = 0;
         this._lastCpuIdle = 0;
+        /* What the Performance and Battery panels read (see _refreshBatteryAndSystem). */
+        this._sys = {cpu: 0, memFree: 0, memTotal: 0, uptime: '', load: ''};
+        this._batteryDevices = [];
+        this._mprisTitle = null;
+        this._mprisArtist = null;
+        this._mprisArtUrl = '';
         this._dead = false;
 
         try {
@@ -496,6 +542,55 @@ class MacOSNotificationCenter {
                 debug(`calendar inner ${Math.round(iw)}x${Math.round(ih)}`);
             }
         } catch (e) {}
+
+        /* Optional: walk through every panel in turn and let each one log its
+         * own measurement. A second flag, so opening the drawer normally stays
+         * quiet. */
+        try {
+            if (GLib.file_test(DEBUG_PANELS, GLib.FileTest.EXISTS))
+                this._provaPannelli();
+        } catch (e) {}
+    }
+
+    /* Debug only (DEBUG_PANELS): open each widget's panel in turn, 900ms apart,
+     * and close it. Every builder is exercised — and measured — without anyone
+     * having to click, which matters because the screenshot portal closes the
+     * popup before it can be captured. */
+    _provaPannelli() {
+        if (!this._pan) {
+            debug('pannelli: pannelli.js non caricato');
+            return;
+        }
+        const prove = [
+            ['weather', () => this._weatherCard],
+            ['calendar', () => this._calendarCard],
+            ['reminders', () => this._remindersCard],
+            ['system', () => this._systemCard],
+            ['music', () => this._musicCard],
+            ['battery', () => this._batteryCard],
+            ['worldclock', () => this._worldClockCard],
+        ];
+        let i = 0;
+        const passo = () => {
+            if (!this._isAlive())
+                return;
+            if (i >= prove.length) {
+                debug('pannelli: prova finita');
+                try {
+                    this._pan.azzera();
+                } catch (e) {}
+                return;
+            }
+            const [chiave, prendi] = prove[i++];
+            try {
+                this._pan.azzera();
+                this._pan.apri(chiave, prendi(), null);
+            } catch (e) {
+                debug(`pannelli: ${chiave} fallito (${e})`);
+            }
+            later(900, passo);
+        };
+        passo();
     }
 
     _initCalendarProxy() {
@@ -557,6 +652,12 @@ class MacOSNotificationCenter {
                 this._updateLiveClocks();
                 this._refreshMedia();
                 this._refreshBatteryAndSystem();
+                /* An open panel is a snapshot, so it is the panel's own job to
+                 * say what has to be redrawn on every tick (cpu, battery,
+                 * clock hands, track). */
+                try {
+                    this._pan?.aggiorna?.();
+                } catch (e) {}
             } catch (e) {}
             return GLib.SOURCE_CONTINUE;
         });
@@ -583,6 +684,22 @@ class MacOSNotificationCenter {
             cards: () => this._cards ?? [],
             weather: () => this._weatherData,
             iconOf: code => this._getWeatherIconAndName(code),
+            cities: () => CITY_LIST,
+            events: () => this._calendarEvents ?? [],
+            system: () => this._sys,
+            battery: () => this._batteryDevices ?? [],
+            music: () => ({
+                hasPlayer: !!this._mprisPlayer,
+                playing: !!this._mprisPlaying,
+                title: this._mprisTitle,
+                artist: this._mprisArtist,
+                artUrl: this._mprisArtUrl,
+            }),
+            mp: {
+                play: () => this._mprisCmd('PlayPause', true),
+                next: () => this._mprisCmd('Next', false),
+                prev: () => this._mprisCmd('Previous', false),
+            },
             log: msg => debug(msg),
         };
     }
@@ -608,11 +725,41 @@ class MacOSNotificationCenter {
      *
      * Clutter.ClickAction is gone in Clutter 51; ClickGesture is what St.Button
      * itself uses. The handler claims the sequence by returning true, which is
-     * also what keeps a click on an inner button from reaching the card. */
+     * also what keeps a click on an inner button from reaching the card.
+     *
+     * A pod that is itself a button (the calendar) already has a gesture of its
+     * own, and two gestures on the same actor cancel each other: there the
+     * button's own `clicked` signal is used instead. */
     _pannello(card, chiave, bersaglio) {
         if (!card)
             return;
         try {
+            if (card instanceof St.Button) {
+                /* The pod *is* a button: instead of adding a second gesture (the
+                 * button's own would cancel it), its `clicked` signal is used —
+                 * and "disarming" it while its panel is open is switching
+                 * `reactive` off, which is the same contract the gesture path
+                 * gets through `gesto.enabled`. Inner buttons keep their own
+                 * clicks: they are separate reactive actors. */
+                const interruttore = {
+                    get enabled() {
+                        return card.reactive;
+                    },
+                    set enabled(v) {
+                        card.reactive = v;
+                    },
+                };
+                card.connect('clicked', () => {
+                    if (!card.reactive || !this._pan)
+                        return;
+                    try {
+                        this._pan.apri(chiave, card, interruttore);
+                    } catch (e) {
+                        console.warn(`macos-nc: panel ${chiave}: ${e}`);
+                    }
+                });
+                return;
+            }
             const gesto = new Clutter.ClickGesture();
             (bersaglio || card).add_action(gesto);
             gesto.connect('recognize', () => {
@@ -737,18 +884,19 @@ class MacOSNotificationCenter {
         row1.add_child(this._calendarCard);
         row1.add_child(this._remindersCard);
         widgetsBox.add_child(row1);
+        this._pannello(this._calendarCard, 'calendar');
+        this._pannello(this._remindersCard, 'reminders');
 
         // Row 2: Performance (Wide Card)
         this._systemCard = this._buildSystemActivityCard();
         this._cards.push(this._systemCard);
         widgetsBox.add_child(this._systemCard);
+        this._pannello(this._systemCard, 'system');
 
         // Row 3: Weather (Wide Card)
         this._weatherCard = this._buildWeatherCard();
         this._cards.push(this._weatherCard);
         widgetsBox.add_child(this._weatherCard);
-        /* Fase 2, first widget: the weather card opens a panel inside its own
-         * glass. The other six follow, one commit each. */
         this._pannello(this._weatherCard, 'weather');
 
         // Row 4: Music (Square) + Real Battery (Square)
@@ -763,11 +911,14 @@ class MacOSNotificationCenter {
         row4.add_child(this._musicCard);
         row4.add_child(this._batteryCard);
         widgetsBox.add_child(row4);
+        this._pannello(this._musicCard, 'music');
+        this._pannello(this._batteryCard, 'battery');
 
         // Row 5: World Clock (Wide Card)
         this._worldClockCard = this._buildWorldClockCard();
         this._cards.push(this._worldClockCard);
         widgetsBox.add_child(this._worldClockCard);
+        this._pannello(this._worldClockCard, 'worldclock');
 
         content.add_child(widgetsBox);
         scroll.set_child(content);
@@ -1006,10 +1157,8 @@ class MacOSNotificationCenter {
         box.add_child(this._calEventText);
 
         card.set_child(box);
-        card.connect('clicked', () => {
-            this._dateMenu?.menu?.close();
-            launch(['gnome-calendar', 'xdg-open calendar:']);
-        });
+        /* A click opens this card's own panel (Fase 2): launching GNOME Calendar
+         * moved inside it, so the widget behaves like every other one. */
         return card;
     }
 
@@ -1219,9 +1368,13 @@ class MacOSNotificationCenter {
         return card;
     }
 
+    /* Reads what the Performance and Battery panels show. The values are kept
+     * on the instance (`_sys`) instead of only being written into the card's
+     * labels: the panels are snapshots that also refresh while open. */
     _refreshBatteryAndSystem() {
         if (!this._isAlive()) return;
-        // Read CPU
+        // Read CPU (the difference between two samples: the first of a session
+        // has nothing to compare against and is skipped)
         try {
             const [ok, contents] = GLib.file_get_contents('/proc/stat');
             if (ok) {
@@ -1235,6 +1388,7 @@ class MacOSNotificationCenter {
                     const diffIdle = idle - this._lastCpuIdle;
                     if (diffTotal > 0) {
                         const usage = Math.round(100 * (1 - diffIdle / diffTotal));
+                        this._sys.cpu = usage;
                         if (this._cpuVal) this._cpuVal.text = `${usage}%`;
                     }
                 }
@@ -1243,16 +1397,19 @@ class MacOSNotificationCenter {
             }
         } catch (e) {}
 
-        // Read Memory
+        // Read Memory: free and total, so the panel can show "used of total"
         try {
             const [ok, contents] = GLib.file_get_contents('/proc/meminfo');
             if (ok) {
                 const text = new TextDecoder().decode(contents);
                 const availMatch = text.match(/MemAvailable:\s+(\d+)\s+kB/);
-                if (availMatch && this._memVal) {
-                    const availGb = (parseInt(availMatch[1], 10) / (1024 * 1024)).toFixed(1);
-                    this._memVal.text = `${availGb} GB`;
+                const totalMatch = text.match(/MemTotal:\s+(\d+)\s+kB/);
+                const toGb = v => parseInt(v, 10) / (1024 * 1024);
+                if (availMatch) {
+                    this._sys.memFree = toGb(availMatch[1]);
+                    if (this._memVal) this._memVal.text = `${this._sys.memFree.toFixed(1)} GB`;
                 }
+                if (totalMatch) this._sys.memTotal = toGb(totalMatch[1]);
             }
         } catch (e) {}
 
@@ -1263,7 +1420,17 @@ class MacOSNotificationCenter {
                 const seconds = Math.floor(parseFloat(new TextDecoder().decode(contents).split(' ')[0]));
                 const hours = Math.floor(seconds / 3600);
                 const mins = Math.floor((seconds % 3600) / 60);
-                if (this._uptimeVal) this._uptimeVal.text = `${hours}h ${mins}m`;
+                this._sys.uptime = `${hours}h ${mins}m`;
+                if (this._uptimeVal) this._uptimeVal.text = this._sys.uptime;
+            }
+        } catch (e) {}
+
+        // Load average: the three standard samples (1, 5 and 15 minutes)
+        try {
+            const [ok, contents] = GLib.file_get_contents('/proc/loadavg');
+            if (ok) {
+                const p = new TextDecoder().decode(contents).trim().split(/\s+/);
+                this._sys.load = `${p[0]}  ${p[1]}  ${p[2]}`;
             }
         } catch (e) {}
 
@@ -1307,7 +1474,7 @@ class MacOSNotificationCenter {
                                             else if (type === 9) { iconName = 'audio-headphones-symbolic'; name = model || 'Headset'; }
                                             else if (state === 1) { iconName = 'battery-good-charging-symbolic'; }
 
-                                            devices.push({name, percentage, iconName});
+                                            devices.push({name, percentage, iconName, state, type});
                                         }
                                     } catch (e) {}
 
@@ -1327,6 +1494,8 @@ class MacOSNotificationCenter {
 
     _updateBatteryUI(devices) {
         if (!this._isAlive()) return;
+        /* Kept for the battery panel; the card is rebuilt from the same list. */
+        this._batteryDevices = devices;
         if (!this._batteryList) return;
         this._batteryList.destroy_all_children();
 
@@ -1581,6 +1750,10 @@ class MacOSNotificationCenter {
             if (!this._isAlive()) return;
             if (!busName) {
                 this._mprisPlayer = null;
+                this._mprisPlaying = false;
+                this._mprisTitle = null;
+                this._mprisArtist = null;
+                this._mprisArtUrl = '';
                 if (this._musicTitle) this._musicTitle.text = 'Pulsar Music';
                 if (this._musicArtist) this._musicArtist.text = t('NO_MEDIA');
                 if (this._playIcon) this._playIcon.icon_name = 'media-playback-start-symbolic';
@@ -1601,6 +1774,11 @@ class MacOSNotificationCenter {
                         const artUrl = meta['mpris:artUrl']?.deepUnpack() ?? '';
 
                         this._mprisPlaying = (status === 'Playing');
+                        /* Kept for the music panel: the card writes them into
+                         * its labels, the panel reads them here. */
+                        this._mprisTitle = title;
+                        this._mprisArtist = artist;
+                        this._mprisArtUrl = artUrl;
                         if (this._musicTitle) this._musicTitle.text = title;
                         if (this._musicArtist) this._musicArtist.text = artist;
                         if (this._playIcon) {
@@ -1625,13 +1803,22 @@ class MacOSNotificationCenter {
         });
     }
 
-    _togglePlayback() {
+    /* MPRIS transport. PlayPause is the card's play button; Next/Previous come
+     * from the music panel. With no player running, play launches one. */
+    _mprisCmd(method, lancioSeAssente) {
         if (!this._mprisPlayer) {
-            launch(['rhythmbox', 'spotify', 'amberol', 'elisa']);
+            if (lancioSeAssente)
+                launch(['rhythmbox', 'spotify', 'amberol', 'elisa']);
             return;
         }
-        Gio.DBus.session.call(this._mprisPlayer, MPRIS_PATH, PLAYER_IFACE, 'PlayPause',
-            null, null, NONE, -1, null, () => this._refreshMedia());
+        try {
+            Gio.DBus.session.call(this._mprisPlayer, MPRIS_PATH, PLAYER_IFACE, method,
+                null, null, NONE, -1, null, () => this._refreshMedia());
+        } catch (e) {}
+    }
+
+    _togglePlayback() {
+        this._mprisCmd('PlayPause', true);
     }
 
     /* 7. Battery Widget (Square) */
@@ -1698,12 +1885,7 @@ class MacOSNotificationCenter {
         if (!this._clocksRow) return;
         this._clocksRow.destroy_all_children();
 
-        const cities = [
-            {name: 'Cupertino', tz: 'America/Los_Angeles'},
-            {name: 'Tokio', tz: 'Asia/Tokyo'},
-            {name: 'Sídney', tz: 'Australia/Sydney'},
-            {name: 'París', tz: 'Europe/Paris'},
-        ];
+        const cities = CITY_LIST;
 
         this._clockLabels = [];
         const localNow = GLib.DateTime.new_now_local();

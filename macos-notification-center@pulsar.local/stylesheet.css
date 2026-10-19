@@ -814,3 +814,281 @@
 .mac-nc-pbar-caldo {
     background-color: #ff9f0a;
 }
+
+/* 14. The other six widget panels (Fase 2)
+ *
+ * Same rule as section 13: a panel lives inside the widget's own card, so
+ * nothing here paints a background. These are the rows a panel is made of.
+ */
+
+/* -------- a row that opens an application -------- */
+.mac-nc-papp {
+    padding: 5px 4px;
+    border-radius: 9px;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.mac-nc-papp:hover {
+    background-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.mac-nc-papp-inner {
+    spacing: 8px;
+}
+
+.mac-nc-papp-icon {
+    icon-size: 14px;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.mac-nc-papp-label {
+    font-size: 12px;
+    color: #ffffff;
+}
+
+.mac-nc-papp-chevron {
+    icon-size: 12px;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+/* -------- label + value -------- */
+.mac-nc-pinfo-row {
+    spacing: 8px;
+    padding: 3px 0px;
+}
+
+.mac-nc-pinfo-label {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.mac-nc-pinfo-value {
+    font-size: 12px;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+/* -------- a labelled bar (Performance, Battery) -------- */
+.mac-nc-pbar-row {
+    spacing: 4px;
+    padding: 4px 0px;
+}
+
+.mac-nc-pbar-head {
+    spacing: 6px;
+}
+
+.mac-nc-pbar-icon {
+    icon-size: 14px;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.mac-nc-pbar-label {
+    font-size: 12px;
+    color: #ffffff;
+}
+
+.mac-nc-pbar-value {
+    font-size: 12px;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+.mac-nc-ptrack {
+    height: 5px;
+    border-radius: 3px;
+    background-color: rgba(255, 255, 255, 0.16);
+}
+
+/* The width is set inline, in pixels: see rigaBarra() in pannelli.js. */
+.mac-nc-ptrack-fill {
+    height: 5px;
+    border-radius: 3px;
+}
+
+.mac-nc-ptrack-ok {
+    background-color: #30d158;
+}
+
+.mac-nc-ptrack-warn {
+    background-color: #ffd60a;
+}
+
+.mac-nc-ptrack-hot {
+    background-color: #ff453a;
+}
+
+/* -------- transport buttons (music) -------- */
+.mac-nc-pbutton {
+    width: 40px;
+    height: 40px;
+    border-radius: 20px;
+    background-color: rgba(255, 255, 255, 0.14) !important;
+    border: none !important;
+    box-shadow: none !important;
+    x-align: center;
+}
+
+.mac-nc-pbutton:hover {
+    background-color: rgba(255, 255, 255, 0.24) !important;
+}
+
+.mac-nc-pbutton-icon {
+    icon-size: 16px;
+    color: #ffffff;
+}
+
+.mac-nc-pcontrols {
+    spacing: 14px;
+    margin-top: 10px;
+}
+
+.mac-nc-pcover {
+    width: 120px;
+    height: 120px;
+    border-radius: 12px;
+    background-color: rgba(255, 255, 255, 0.10);
+    margin-top: 6px;
+}
+
+.mac-nc-pcover-art {
+    border-radius: 12px;
+}
+
+.mac-nc-pcover-generic {
+    icon-size: 44px;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.mac-nc-pmusictitle {
+    font-size: 15px;
+    font-weight: 600;
+    color: #ffffff;
+    margin-top: 10px;
+}
+
+.mac-nc-partist {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+/* -------- month grid, panel size -------- */
+.mac-nc-pmonth {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    color: #ffffff;
+    margin: 2px 0px 4px 0px;
+}
+
+.mac-nc-pweek {
+    spacing: 2px;
+    margin-bottom: 2px;
+}
+
+.mac-nc-pweek-day {
+    width: 32px;
+    font-size: 9px;
+    font-weight: 700;
+    opacity: 0.55;
+    text-align: center;
+    color: #ffffff;
+}
+
+.mac-nc-pcal {
+    spacing: 2px;
+}
+
+.mac-nc-pcal-row {
+    spacing: 2px;
+}
+
+.mac-nc-pcal-cell {
+    width: 32px;
+    height: 32px;
+}
+
+.mac-nc-pcal-day {
+    font-size: 12px;
+    font-weight: 500;
+    text-align: center;
+    color: #ffffff;
+}
+
+.mac-nc-pcal-other {
+    opacity: 0.3;
+}
+
+/* Same red the card uses for today, bigger. */
+.mac-nc-pcal-today {
+    background-color: #ff453a !important;
+    border-radius: 13px;
+    width: 26px;
+    height: 26px;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+}
+
+/* -------- one event -------- */
+.mac-nc-pevent {
+    spacing: 8px;
+    padding: 2px 0px;
+}
+
+.mac-nc-ptime {
+    font-size: 12px;
+    font-weight: 600;
+    width: 48px;
+    color: #ffffff;
+}
+
+.mac-nc-psummary {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+/* -------- battery -------- */
+.mac-nc-pbattery {
+    spacing: 2px;
+}
+
+.mac-nc-pbattery-state {
+    font-size: 11px;
+    font-weight: 600;
+    opacity: 0.8;
+    color: #ffffff;
+    padding-bottom: 2px;
+}
+
+/* -------- world clock -------- */
+.mac-nc-pclock {
+    spacing: 10px;
+    padding: 5px 0px;
+}
+
+.mac-nc-pclock-city {
+    font-size: 13px;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+.mac-nc-pclock-offset {
+    font-size: 10px;
+    opacity: 0.65;
+    color: #ffffff;
+}
+
+.mac-nc-pclock-time {
+    font-size: 22px;
+    font-weight: 300;
+    color: #ffffff;
+}
+
+/* -------- small variations of the section-13 type scale -------- */
+.mac-nc-ptemp-small {
+    font-size: 17px;
+    font-weight: 500;
+    color: #ffffff;
+}
