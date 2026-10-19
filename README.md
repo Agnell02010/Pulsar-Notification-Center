@@ -35,11 +35,50 @@ gnome-extensions enable  macos-notification-center@pulsar.local
 ```
 install.sh                              installer
 macos-notification-center@pulsar.local/ the extension itself
-    extension.js                        entry point (shell-cached: needs a login)
+    extension.js                        entry point, thin (shell-cached: needs a login)
+    nc.js                               the whole drawer (hot-reloadable)
     stylesheet.css                      the look
     icons/                              bundled symbolic icons
     metadata.json
 ```
+
+## Working on it
+
+After the first install (and the one logout it needs), the development loop
+does not require logging out again:
+
+```bash
+# 1. edit nc.js / stylesheet.css
+# 2. reload
+gnome-extensions disable macos-notification-center@pulsar.local
+gnome-extensions enable  macos-notification-center@pulsar.local
+```
+
+Only changes to `extension.js` or `metadata.json` need a logout/login.
+
+You can check that `nc.js` and `extension.js` at least parse and load, without
+touching the running session, with `gjs` and stubbed `gi://` modules:
+
+```bash
+gjs -m /path/to/nc.js     # syntax + module load
+```
+
+### Rolling back
+
+If the user-level copy misbehaves, put the original snapshot back and
+reinstall (no logout needed):
+
+```bash
+cd ~/Pulsar-Notification-Center
+git checkout e4ba32e -- macos-notification-center@pulsar.local
+./install.sh
+gnome-extensions disable macos-notification-center@pulsar.local
+gnome-extensions enable  macos-notification-center@pulsar.local
+```
+
+To go back to the system copy for good, delete the user-level folder and log
+out/in (the shell resolves extension paths at login): the extension shipped in
+`/usr/share/gnome-shell/extensions/` takes over again.
 
 ## Notes
 
