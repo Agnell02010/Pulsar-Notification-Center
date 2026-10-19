@@ -118,9 +118,16 @@
 }
 
 .mac-nc-square {
+    /* Width: measured, not guessed. The two widgets in a row used to size
+     * themselves on their own content (the calendar came out 192px wide, the
+     * tasks widget 162px), so the row looked ragged. Both cards expand, so
+     * giving them the same preferred width splits the row evenly:
+     * (366 - 12 gap) / 2 = 177. */
+    width: 177px;
     /* 168px (was 154): a month grid can span six weeks (March, August and
      * November 2026, for instance) and at 154px the last row plus the event
-     * line spilled outside the card. */
+     * line spilled outside the card. In practice the content drives the height
+     * (measured 190px for a five week month), so this stays a floor. */
     height: 168px;
     min-height: 168px;
     max-height: 168px;

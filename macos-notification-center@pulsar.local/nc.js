@@ -166,6 +166,33 @@ function icon(name, cls = '', size = 16) {
     return new St.Icon(props);
 }
 
+/* Geometry probe.
+ *
+ * When /tmp/pulsar-nc-debug exists the drawer dumps its real geometry to the
+ * journal every time it opens: the size of every pod, the corner radius its CSS
+ * actually resolves to, and whether Liquid Glass will paint it (the
+ * `quick-toggle` class). That is the only honest way to check the corners
+ * without a working screenshot of an open popup — the screenshot portal closes
+ * the menu before capturing it.
+ *
+ *     touch /tmp/pulsar-nc-debug      # on
+ *     rm /tmp/pulsar-nc-debug         # off
+ */
+const DEBUG_FLAG = '/tmp/pulsar-nc-debug';
+
+function debugOn() {
+    try {
+        return GLib.file_test(DEBUG_FLAG, GLib.FileTest.EXISTS);
+    } catch (e) {
+        return false;
+    }
+}
+
+function debug(msg) {
+    if (debugOn())
+        console.log(`pulsar-nc-dbg: ${msg}`);
+}
+
 /* Launches the first command that actually exists.
  *
  * `cmd` is either one command or a list of alternatives. A single string like
@@ -287,6 +314,7 @@ class MacOSNotificationCenter {
                     this._queryTodayEvents();
                     this._refresh();
                     this._updateLiquidGlass();
+                    later(700, () => this._dumpGeometry());
                     this._startPolling();
                 } else {
                     this._stopPolling();
@@ -401,6 +429,52 @@ class MacOSNotificationCenter {
             else
                 card.remove_style_class_name('quick-toggle');
         }
+    }
+
+    /* See DEBUG_FLAG at the top of the file. */
+    _dumpGeometry() {
+        if (!debugOn()) return;
+        const info = a => {
+            try {
+                const [w, h] = a.get_transformed_size();
+                let r = -1;
+                try {
+                    const node = a.get_theme_node();
+                    r = node ? Math.round(node.get_border_radius(St.Corner.TOPLEFT)) : -1;
+                } catch (e) {
+                    r = -2;
+                }
+                const pod = a.has_style_class_name('quick-toggle') ? 'glass' : 'plain';
+                return `${Math.round(w)}x${Math.round(h)} css-radius=${r} ${pod}`;
+            } catch (e) {
+                return `? (${e})`;
+            }
+        };
+        try {
+            const [w, h] = this._root ? this._root.get_transformed_size() : [0, 0];
+            debug(`sidebar ${Math.round(w)}x${Math.round(h)} cards=${(this._cards ?? []).length}`);
+        } catch (e) {}
+        for (const card of this._cards ?? [])
+            debug(`widget  ${card.get_style_class_name()}  ${info(card)}`);
+        try {
+            const kids = this._notifList ? this._notifList.get_children() : [];
+            debug(`notifications=${kids.length}`);
+            for (const k of kids)
+                debug(`notif   ${k.get_style_class_name()}  ${info(k)}`);
+        } catch (e) {}
+        /* The calendar is the only card whose height depends on the month
+         * (five or six week rows), so it is the one that can overflow. */
+        try {
+            if (this._calGrid) {
+                const [gw, gh] = this._calGrid.get_transformed_size();
+                debug(`calendar grid ${Math.round(gw)}x${Math.round(gh)} rows=${this._calGrid.get_n_children()}`);
+            }
+            const inner = this._calendarCard ? this._calendarCard.get_first_child() : null;
+            if (inner) {
+                const [iw, ih] = inner.get_transformed_size();
+                debug(`calendar inner ${Math.round(iw)}x${Math.round(ih)}`);
+            }
+        } catch (e) {}
     }
 
     _initCalendarProxy() {
