@@ -166,11 +166,31 @@ function icon(name, cls = '', size = 16) {
     return new St.Icon(props);
 }
 
+/* Launches the first command that actually exists.
+ *
+ * `cmd` is either one command or a list of alternatives. A single string like
+ * "gnome-calendar || xdg-open calendar:" does NOT work: Gio parses the string
+ * into argv, so the shell operators are passed to the first program as
+ * arguments and nothing is ever opened. Each alternative is therefore resolved
+ * (and checked against PATH) explicitly. */
 function launch(cmd) {
-    try {
-        Gio.AppInfo.create_from_commandline(cmd, null, Gio.AppInfoCreateFlags.NONE).launch([], null);
-    } catch (e) {
-        console.warn(`macos-nc: failed to launch ${cmd}: ${e}`);
+    for (const candidate of (Array.isArray(cmd) ? cmd : [cmd])) {
+        try {
+            const [ok, argv] = GLib.shell_parse_argv(candidate);
+            if (!ok || argv.length === 0)
+                continue;
+            if (argv[0].includes('/')) {
+                if (!GLib.file_test(argv[0], GLib.FileTest.IS_EXECUTABLE))
+                    continue;
+            } else if (!GLib.find_program_in_path(argv[0])) {
+                continue;
+            }
+            Gio.AppInfo.create_from_commandline(candidate, null,
+                Gio.AppInfoCreateFlags.NONE).launch([], null);
+            return;
+        } catch (e) {
+            console.warn(`macos-nc: failed to launch ${candidate}: ${e}`);
+        }
     }
 }
 
@@ -231,6 +251,7 @@ class MacOSNotificationCenter {
         this._calendarProxy = null;
         this._lastCpuTotal = 0;
         this._lastCpuIdle = 0;
+        this._dead = false;
 
         try {
             this._ifaceSettings = new Gio.Settings({schema_id: 'org.gnome.desktop.interface'});
@@ -293,6 +314,10 @@ class MacOSNotificationCenter {
     }
 
     disable() {
+        // Anything already in flight (D-Bus replies, Soup requests, the poll)
+        // must not touch the widgets after this point: writing to a destroyed
+        // St actor logs "Object ... has been already disposed" on every tick.
+        this._dead = true;
         this._stopPolling();
 
         if (this._weatherPollId) {
@@ -340,6 +365,12 @@ class MacOSNotificationCenter {
 
         this._dateMenu = null;
         this._calendarProxy = null;
+    }
+
+    /* False as soon as disable() runs (or before the drawer is built): every
+     * asynchronous callback checks this before touching an actor. */
+    _isAlive() {
+        return !this._dead && !!this._root;
     }
 
     _applyTransparentContainer(enable) {
@@ -411,6 +442,7 @@ class MacOSNotificationCenter {
     }
 
     _refresh() {
+        if (!this._isAlive()) return;
         this._refreshCalendar();
         this._refreshNotifications();
         this._refreshWorldClocks();
@@ -586,6 +618,7 @@ class MacOSNotificationCenter {
 
     /* 1. Notifications UI */
     _refreshNotifications() {
+        if (!this._isAlive()) return;
         if (!this._notifList) return;
         this._notifList.destroy_all_children();
 
@@ -817,12 +850,13 @@ class MacOSNotificationCenter {
         card.set_child(box);
         card.connect('clicked', () => {
             this._dateMenu?.menu?.close();
-            launch('gnome-calendar || xdg-open calendar:');
+            launch(['gnome-calendar', 'xdg-open calendar:']);
         });
         return card;
     }
 
     _refreshCalendar() {
+        if (!this._isAlive()) return;
         const now = GLib.DateTime.new_now_local();
         const year = now.get_year();
         const month = now.get_month(); // 1-12
@@ -1028,6 +1062,7 @@ class MacOSNotificationCenter {
     }
 
     _refreshBatteryAndSystem() {
+        if (!this._isAlive()) return;
         // Read CPU
         try {
             const [ok, contents] = GLib.file_get_contents('/proc/stat');
@@ -1133,6 +1168,7 @@ class MacOSNotificationCenter {
     }
 
     _updateBatteryUI(devices) {
+        if (!this._isAlive()) return;
         if (!this._batteryList) return;
         this._batteryList.destroy_all_children();
 
@@ -1267,6 +1303,7 @@ class MacOSNotificationCenter {
     }
 
     _refreshWeatherUI() {
+        if (!this._isAlive()) return;
         if (!this._weatherData || !this._weatherCity) return;
         const current = this._weatherData.current;
         const cityName = this._weatherData.cityName || 'A Coruña';
@@ -1377,7 +1414,10 @@ class MacOSNotificationCenter {
     }
 
     _refreshMedia() {
+        if (!this._isAlive()) return;
         findPlayer(busName => {
+            // The callback may land after disable() destroyed the widgets.
+            if (!this._isAlive()) return;
             if (!busName) {
                 this._mprisPlayer = null;
                 if (this._musicTitle) this._musicTitle.text = 'Pulsar Music';
@@ -1426,7 +1466,7 @@ class MacOSNotificationCenter {
 
     _togglePlayback() {
         if (!this._mprisPlayer) {
-            launch('rhythmbox || spotify || amberol || elisa');
+            launch(['rhythmbox', 'spotify', 'amberol', 'elisa']);
             return;
         }
         Gio.DBus.session.call(this._mprisPlayer, MPRIS_PATH, PLAYER_IFACE, 'PlayPause',
@@ -1493,6 +1533,7 @@ class MacOSNotificationCenter {
     }
 
     _refreshWorldClocks() {
+        if (!this._isAlive()) return;
         if (!this._clocksRow) return;
         this._clocksRow.destroy_all_children();
 
@@ -1543,6 +1584,7 @@ class MacOSNotificationCenter {
     }
 
     _updateLiveClocks() {
+        if (!this._isAlive()) return;
         if (!this._clockLabels) return;
         const localNow = GLib.DateTime.new_now_local();
         for (const item of this._clockLabels) {

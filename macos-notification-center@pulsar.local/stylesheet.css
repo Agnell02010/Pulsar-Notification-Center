@@ -80,20 +80,37 @@
     width: 350px;
 }
 
-/* 3. Base Floating Glass Cards */
+/* 3. Base Floating Glass Cards
+ *
+ * The widget cards are Liquid Glass "pods": nc.js tags them with `quick-toggle`,
+ * which is exactly what Liquid Glass looks for (the same hook as the Control
+ * Centre tiles). Two consequences:
+ *
+ *  - The drawn corner MUST match the glass corner
+ *    (`quick-settings-toggle-corner-radius` = 32.5). Liquid Glass paints its
+ *    rounded region on the widget's own box: with a smaller radius here the
+ *    drawing sticks out of the glass and the corners look broken. 32.5 is less
+ *    than half of the 168px square cards, so the shape stays valid.
+ *  - The base colour is what Liquid Glass reads as the pod's tint, so it uses
+ *    the same recipe as the Control Centre tiles (a light 8% base plus a 1px
+ *    hairline). A fully transparent pod makes Liquid Glass composite a dark
+ *    ancestor colour instead.
+ *
+ * No `transition` here on purpose: GNOME Shell's CSS has no transitions, the
+ * animations are written in JS.
+ */
 .mac-nc-card {
-    border-radius: 18px;
+    border-radius: 32.5px;
     padding: 12px;
-    background-color: rgba(30, 30, 40, 0.76) !important;
-    border: 1px solid rgba(255, 255, 255, 0.16) !important;
+    background-color: rgba(255, 255, 255, 0.08) !important;
+    border: 1px solid rgba(255, 255, 255, 0.18) !important;
     box-shadow: none !important;
     color: #ffffff !important;
-    transition: all 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .mac-nc-card:hover {
-    background-color: rgba(42, 45, 62, 0.90) !important;
-    border-color: rgba(255, 255, 255, 0.24) !important;
+    background-color: rgba(255, 255, 255, 0.14) !important;
+    border-color: rgba(255, 255, 255, 0.26) !important;
 }
 
 .mac-nc-card-inner {
@@ -101,20 +118,37 @@
 }
 
 .mac-nc-square {
-    height: 154px;
-    min-height: 154px;
-    max-height: 154px;
+    /* 168px (was 154): a month grid can span six weeks (March, August and
+     * November 2026, for instance) and at 154px the last row plus the event
+     * line spilled outside the card. */
+    height: 168px;
+    min-height: 168px;
+    max-height: 168px;
 }
 
 .mac-nc-wide {
     width: 350px;
 }
 
-/* 4. Notifications */
+/* 4. Notifications
+ *
+ * Notification cards are NOT Liquid Glass pods: their height changes with the
+ * text, and a glass pod would turn into a pill (the glass corner radius is
+ * fixed at 32.5). They therefore keep their own darker base — the drawer has no
+ * panel behind it, so without the blur of a pod they would be unreadable on a
+ * bright wallpaper — with a radius from the same scale as the cards.
+ */
 .mac-nc-notif-card {
     padding: 10px 12px;
-    border-radius: 16px;
+    border-radius: 22px;
+    background-color: rgba(30, 30, 40, 0.66) !important;
+    border: 1px solid rgba(255, 255, 255, 0.14) !important;
     width: 350px;
+}
+
+.mac-nc-notif-card:hover {
+    background-color: rgba(44, 47, 62, 0.74) !important;
+    border-color: rgba(255, 255, 255, 0.20) !important;
 }
 
 .mac-nc-notif-top {
@@ -143,9 +177,9 @@
 }
 
 .mac-nc-notif-close {
-    width: 18px;
-    height: 18px;
-    border-radius: 9px;
+    width: 20px;
+    height: 20px;
+    border-radius: 119px;
     padding: 0;
     background-color: rgba(255, 255, 255, 0.15);
     opacity: 0.7;
@@ -179,7 +213,9 @@
 .mac-nc-empty-card {
     padding: 14px 16px;
     spacing: 10px;
-    border-radius: 16px;
+    border-radius: 22px;
+    background-color: rgba(30, 30, 40, 0.66) !important;
+    border: 1px solid rgba(255, 255, 255, 0.14) !important;
     width: 350px;
 }
 
@@ -199,7 +235,7 @@
 
 .mac-nc-more-notifs-btn {
     padding: 8px 12px;
-    border-radius: 14px;
+    border-radius: 18px;
     background-color: rgba(255, 255, 255, 0.10);
     border: 1px solid rgba(255, 255, 255, 0.12);
     width: 350px;
@@ -254,23 +290,23 @@
 }
 
 .mac-nc-cal-header-day {
-    font-size: 8px;
+    font-size: 9px;
     font-weight: 700;
     opacity: 0.55;
     color: #ffffff;
-    width: 20px;
+    width: 18px;
     text-align: center;
 }
 
 .mac-nc-cal-cell {
-    width: 20px;
-    height: 17px;
+    width: 18px;
+    height: 18px;
     x-align: center;
     y-align: center;
 }
 
 .mac-nc-cal-day-label {
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 500;
     color: #ffffff;
     text-align: center;
@@ -282,9 +318,9 @@
 
 .mac-nc-cal-today-bubble {
     background-color: #ff453a !important;
-    border-radius: 8px;
+    border-radius: 119px;
     width: 18px;
-    height: 16px;
+    height: 18px;
     color: #ffffff !important;
     font-weight: 700 !important;
 }
@@ -305,7 +341,7 @@
 .mac-nc-reminders-icon-bg {
     width: 20px;
     height: 20px;
-    border-radius: 10px;
+    border-radius: 6px;
     background-color: #ff9f0a;
 }
 
@@ -378,7 +414,7 @@
     font-size: 9px;
     font-weight: 700;
     padding: 1px 6px;
-    border-radius: 4px;
+    border-radius: 6px;
     margin-top: 2px;
 }
 
@@ -431,7 +467,7 @@
 .mac-nc-forecast-pill {
     spacing: 3px;
     padding: 4px 2px;
-    border-radius: 8px;
+    border-radius: 12px;
     background-color: rgba(255, 255, 255, 0.08);
 }
 
@@ -479,7 +515,7 @@
 .mac-nc-cover-art {
     width: 38px;
     height: 38px;
-    border-radius: 8px;
+    border-radius: 12px;
     background-color: rgba(0, 0, 0, 0.25);
     background-size: cover;
     background-position: center;
@@ -501,7 +537,7 @@
 .mac-nc-podcast-play-btn {
     width: 26px;
     height: 26px;
-    border-radius: 13px;
+    border-radius: 119px;
     background-color: rgba(255, 255, 255, 0.25);
     border: 1px solid rgba(255, 255, 255, 0.35);
     padding: 0;
@@ -577,7 +613,7 @@
 .mac-nc-clock-col {
     spacing: 2px;
     padding: 4px;
-    border-radius: 10px;
+    border-radius: 14px;
     background-color: rgba(255, 255, 255, 0.08);
 }
 
