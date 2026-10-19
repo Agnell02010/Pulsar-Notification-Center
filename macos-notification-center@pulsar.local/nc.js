@@ -62,6 +62,10 @@ const STRINGS = {
         SNOW: 'Nieve',
         THUNDERSTORM: 'Tormenta',
         FOG: 'Niebla',
+        WEATHER: 'Clima',
+        PANEL_10DAY: 'Previsión de 10 días',
+        PANEL_NO_DATA: 'Sin datos de previsión',
+        PANEL_SOON: 'Panel en camino',
         CAL_DAYS: ['L', 'M', 'X', 'J', 'V', 'S', 'D'],
     },
     en: {
@@ -101,6 +105,10 @@ const STRINGS = {
         SNOW: 'Snow',
         THUNDERSTORM: 'Thunderstorm',
         FOG: 'Fog',
+        WEATHER: 'Weather',
+        PANEL_10DAY: '10-Day Forecast',
+        PANEL_NO_DATA: 'No forecast data',
+        PANEL_SOON: 'Panel coming soon',
         CAL_DAYS: ['M', 'T', 'W', 'T', 'F', 'S', 'S'],
     }
 };
@@ -290,6 +298,9 @@ class MacOSNotificationCenter {
         this._initCalendarProxy();
         this._buildUI();
 
+        this._pan = null;
+        this._loadPannelli();
+
         if (this._dateMenu?.menu?.box) {
             const box = this._dateMenu.menu.box;
             box.get_children().forEach(child => {
@@ -318,6 +329,11 @@ class MacOSNotificationCenter {
                     this._startPolling();
                 } else {
                     this._stopPolling();
+                    /* Leave the drawer in its normal state: a panel left open
+                     * would be rebuilt on the next open with stale data. */
+                    try {
+                        this._pan?.azzera();
+                    } catch (e) {}
                 }
             })]);
         }
@@ -347,6 +363,11 @@ class MacOSNotificationCenter {
         // St actor logs "Object ... has been already disposed" on every tick.
         this._dead = true;
         this._stopPolling();
+
+        try {
+            this._pan?.azzera();
+        } catch (e) {}
+        this._pan = null;
 
         if (this._weatherPollId) {
             GLib.source_remove(this._weatherPollId);
@@ -549,6 +570,66 @@ class MacOSNotificationCenter {
     }
 
     /* Build Entire UI Layout */
+    /* ---------- widget detail panels (Fase 2) ----------
+     * pannelli.js holds the panels. It is imported with a cache-busting query
+     * on every enable, exactly as extension.js imports nc.js, so editing the
+     * panels needs a disable/enable and never a login. */
+    _helperPannelli() {
+        return {
+            t,
+            icon,
+            launch,
+            later,
+            cards: () => this._cards ?? [],
+            weather: () => this._weatherData,
+            iconOf: code => this._getWeatherIconAndName(code),
+            log: msg => debug(msg),
+        };
+    }
+
+    _loadPannelli() {
+        try {
+            const uri = Gio.File.new_for_path(
+                GLib.build_filenamev([this._path, 'pannelli.js'])).get_uri();
+            import(`${uri}?v=${Date.now()}`).then(mod => {
+                if (this._dead)
+                    return;
+                this._pan = mod.crea(this, this._helperPannelli());
+            }).catch(e => console.warn(`macos-nc: pannelli.js could not be loaded: ${e}`));
+        } catch (e) {
+            console.warn(`macos-nc: pannelli.js could not be loaded: ${e}`);
+        }
+    }
+
+    /* Hand a widget pod to pannelli.js: the panel opens inside the card's own
+     * glass, and the pod is the anchor. `bersaglio` lets a card that holds
+     * live controls (the music card's play button) open from its header only,
+     * so the controls keep their own clicks.
+     *
+     * Clutter.ClickAction is gone in Clutter 51; ClickGesture is what St.Button
+     * itself uses. The handler claims the sequence by returning true, which is
+     * also what keeps a click on an inner button from reaching the card. */
+    _pannello(card, chiave, bersaglio) {
+        if (!card)
+            return;
+        try {
+            const gesto = new Clutter.ClickGesture();
+            (bersaglio || card).add_action(gesto);
+            gesto.connect('recognize', () => {
+                if (!this._pan)
+                    return true;
+                try {
+                    this._pan.apri(chiave, card, gesto);
+                } catch (e) {
+                    console.warn(`macos-nc: panel ${chiave}: ${e}`);
+                }
+                return true;
+            });
+        } catch (e) {
+            console.warn(`macos-nc: panel ${chiave} not wired: ${e}`);
+        }
+    }
+
     _buildUI() {
         this._cards = [];
 
@@ -666,6 +747,9 @@ class MacOSNotificationCenter {
         this._weatherCard = this._buildWeatherCard();
         this._cards.push(this._weatherCard);
         widgetsBox.add_child(this._weatherCard);
+        /* Fase 2, first widget: the weather card opens a panel inside its own
+         * glass. The other six follow, one commit each. */
+        this._pannello(this._weatherCard, 'weather');
 
         // Row 4: Music (Square) + Real Battery (Square)
         const row4 = new St.BoxLayout({
@@ -1349,7 +1433,10 @@ class MacOSNotificationCenter {
     _fetchWeather() {
         if (!this._soupSession) return;
         const loc = this._getConfiguredLocation();
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,weather_code&hourly=temperature_2m,weather_code&forecast_days=1&timezone=auto`;
+        /* `daily` + 10 days feeds the weather widget's detail panel (the card
+         * itself only shows the next few hours). One request, one payload: the
+         * hourly part is still there for the card's strip. */
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,weather_code&hourly=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=10&timezone=auto`;
 
         const msg = Soup.Message.new('GET', url);
         this._soupSession.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (_s, res) => {

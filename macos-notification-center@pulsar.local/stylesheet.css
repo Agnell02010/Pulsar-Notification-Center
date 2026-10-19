@@ -645,3 +645,172 @@
     margin-top: 1px;
     color: #ffffff;
 }
+
+/* 13. Widget detail panels (Fase 2)
+ *
+ * A panel is NOT a pod: it is built inside the widget's own card, so nothing
+ * here draws a background. The Liquid Glass block the user sees behind a panel
+ * is the card's glass, which is the whole point of the rework — one glass block
+ * per widget, like the Control Centre, and the panel inherits it.
+ *
+ * Only typography, separators and the one bar that needs a colour live here.
+ */
+.mac-nc-panel {
+    spacing: 2px;
+}
+
+/* The wrapper holding the card's normal content while a panel is open. It must
+ * not change anything about how that content was laid out. */
+.mac-nc-panel-main {
+    spacing: 0px;
+}
+
+.mac-nc-panel-head {
+    padding: 0px 0px 2px 0px;
+}
+
+/* macOS back affordance: chevron plus the widget's name, on a soft pill. */
+.mac-nc-panel-back {
+    padding: 2px 8px 2px 6px;
+    border-radius: 9px;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.mac-nc-panel-back:hover {
+    background-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.mac-nc-panel-back-inner {
+    spacing: 4px;
+}
+
+.mac-nc-panel-chevron {
+    icon-size: 14px;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.mac-nc-panel-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+.mac-nc-panel-sep {
+    height: 1px;
+    background-gradient-direction: vertical;
+    background-gradient-start: rgba(255, 255, 255, 0.16);
+    background-gradient-end: rgba(255, 255, 255, 0.08);
+    margin: 5px 2px;
+}
+
+.mac-nc-panel-section {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.6);
+    margin: 2px 0px 1px 0px;
+}
+
+.mac-nc-panel-note {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.7);
+    padding: 4px 0px;
+}
+
+/* -------- current conditions, at the top of the weather panel -------- */
+.mac-nc-prow-now {
+    spacing: 10px;
+    padding: 2px 0px;
+}
+
+.mac-nc-pnow-text {
+    spacing: 0px;
+}
+
+.mac-nc-pbig-icon {
+    icon-size: 30px;
+    width: 34px;
+    height: 30px;
+    color: #ffffff;
+}
+
+.mac-nc-ptemp {
+    font-size: 26px;
+    font-weight: 300;
+    color: #ffffff;
+}
+
+.mac-nc-pcity {
+    font-size: 11px;
+    opacity: 0.8;
+    color: #ffffff;
+}
+
+/* -------- one row per forecast day --------
+ * The day name expands: it keeps the left edge (macOS puts the weekday there)
+ * and pushes the numbers and the bar to the right as a group. */
+.mac-nc-prow {
+    spacing: 6px;
+    padding: 3px 0px;
+}
+
+.mac-nc-pday {
+    font-size: 12px;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+.mac-nc-picon {
+    icon-size: 14px;
+    width: 18px;
+    height: 14px;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.mac-nc-pmin {
+    font-size: 11px;
+    width: 30px;
+    text-align: right;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.mac-nc-pmax {
+    font-size: 11px;
+    width: 30px;
+    text-align: right;
+    color: #ffffff;
+}
+
+/* Temperature range bar: a track whose width is fixed by CSS (and must stay
+ * equal to TRACK in pannelli.js, because the segment inside is placed with
+ * plain pixel arithmetic) with the day's range painted inside the week's. */
+.mac-nc-pbar {
+    width: 150px;
+    height: 4px;
+    border-radius: 2px;
+    background-color: rgba(255, 255, 255, 0.18);
+}
+
+.mac-nc-pbar-fill {
+    height: 4px;
+    border-radius: 2px;
+}
+
+.mac-nc-pbar-freddo {
+    background-color: #64d2ff;
+}
+
+.mac-nc-pbar-fresco {
+    background-color: #40c8e0;
+}
+
+.mac-nc-pbar-mite {
+    background-color: #ffd60a;
+}
+
+.mac-nc-pbar-caldo {
+    background-color: #ff9f0a;
+}
