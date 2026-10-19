@@ -89,6 +89,8 @@ const STRINGS = {
         PANEL_NEXT: 'Siguiente',
         PANEL_PLAY: 'Reproducir',
         PANEL_PAUSE: 'Pausa',
+        PANEL_SHUFFLE: 'Aleatorio',
+        PANEL_REPEAT: 'Repetir',
         CAL_DAYS: ['L', 'M', 'X', 'J', 'V', 'S', 'D'],
     },
     en: {
@@ -146,6 +148,8 @@ const STRINGS = {
         PANEL_NEXT: 'Next',
         PANEL_PLAY: 'Play',
         PANEL_PAUSE: 'Pause',
+        PANEL_SHUFFLE: 'Shuffle',
+        PANEL_REPEAT: 'Repeat',
         CAL_DAYS: ['M', 'T', 'W', 'T', 'F', 'S', 'S'],
     }
 };
@@ -189,6 +193,14 @@ const CALENDAR_SERVER_XML = `
 
 let ICON_DIR = '';
 
+/* Liquid Glass clears the background of the widgets it recognises inside a
+ * pod, and it puts back the style it had captured the first time it saw the
+ * widget. A widget that already carries this exact string is left alone
+ * entirely: that is how the Control Centre protects the album art, which
+ * would otherwise snap back to the previous track at every colour resample.
+ * The string has to match exactly. */
+const LG_OVERRIDE = 'background-color: transparent !important;';
+
 function symbol(name) {
     try {
         return Gio.icon_new_for_string(`${ICON_DIR}/${name}-symbolic.svg`);
@@ -209,6 +221,42 @@ function icon(name, cls = '', size = 16) {
     else
         props.icon_name = name;
     return new St.Icon(props);
+}
+
+/* The animation timings are shared with the Control Centre: both read the same
+ * file, so a change there moves the Notification Centre too. A missing file is
+ * not an error — the values below are the ones the file ships with. */
+const ANIM_FILE = GLib.build_filenamev([
+    GLib.get_home_dir(), '.config', 'pulsar-cc', 'animazione.json',
+]);
+
+let ANIM = null;
+
+function animazione() {
+    if (ANIM)
+        return ANIM;
+    ANIM = {
+        enabled: true,
+        enterScale: 0.96,
+        enterDuration: 240,
+        enterSettle: 150,
+        enterOvershoot: 1.02,
+        enterRise: 4,
+        popScale: 1.12,
+        popDown: 110,
+        popUp: 230,
+    };
+    try {
+        const [ok, bytes] = GLib.file_get_contents(ANIM_FILE);
+        if (ok) {
+            const j = JSON.parse(new TextDecoder('utf-8').decode(bytes));
+            if (j && typeof j === 'object')
+                Object.assign(ANIM, j);
+        }
+    } catch (e) {
+        /* the defaults are enough */
+    }
+    return ANIM;
 }
 
 /* Geometry probe.
@@ -338,6 +386,8 @@ class MacOSNotificationCenter {
         this._mprisLength = 0;
         this._mprisPosition = 0;
         this._mprisPosTime = 0;
+        this._mprisShuffle = false;
+        this._mprisLoop = 'None';
         this._dead = false;
 
         try {
@@ -685,6 +735,8 @@ class MacOSNotificationCenter {
         return {
             t,
             icon,
+            symbol,
+            anim: animazione(),
             launch,
             later,
             cards: () => this._cards ?? [],
@@ -704,12 +756,21 @@ class MacOSNotificationCenter {
                 length: this._mprisLength,
                 position: this._mprisPosition,
                 posTime: this._mprisPosTime,
+                /* The state of the shuffle and of the repeat. */
+                shuffle: !!this._mprisShuffle,
+                loop: this._mprisLoop || 'None',
             }),
             mp: {
                 play: () => this._mprisCmd('PlayPause', true),
                 next: () => this._mprisCmd('Next', false),
                 prev: () => this._mprisCmd('Previous', false),
+                shuffle: () => this._mprisShuffle(!this._mprisShuffle),
+                repeat: () => this._mprisRepeat(),
             },
+            /* The album art as a local path: a remote cover is downloaded and
+             * cached, because St cannot load an http image by itself. */
+            art: (url, cb) => this._artPath(url, cb),
+            lgOverride: LG_OVERRIDE,
             log: msg => debug(msg),
         };
     }
@@ -771,7 +832,11 @@ class MacOSNotificationCenter {
                 return;
             }
             const gesto = new Clutter.ClickGesture();
-            (bersaglio || card).add_action(gesto);
+            /* More than one target is allowed: the music pod is opened from
+             * its header and from the cover, so the panel is easy to reach. */
+            const bersagli = Array.isArray(bersaglio) ? bersaglio.filter(x => x) : [bersaglio || card];
+            for (const b of bersagli)
+                b.add_action(gesto);
             gesto.connect('recognize', () => {
                 if (!this._pan)
                     return true;
@@ -921,7 +986,10 @@ class MacOSNotificationCenter {
         row4.add_child(this._musicCard);
         row4.add_child(this._batteryCard);
         widgetsBox.add_child(row4);
-        this._pannello(this._musicCard, 'music');
+        /* The music pod opens from its header, from the cover and from the
+         * name: the transport has its own clicks and a gesture on the whole
+         * card would swallow them. */
+        this._pannello(this._musicCard, 'music', [this._musicHeader, this._musicArt, this._musicArea]);
         this._pannello(this._batteryCard, 'battery');
 
         // Row 5: World Clock (Wide Card)
@@ -1686,7 +1754,16 @@ class MacOSNotificationCenter {
         }
     }
 
-    /* 6. Music Widget (Square) with Real Cover Art */
+    /* 6. Music Widget (Square) with Real Cover Art
+     *
+     * The disposition is the one of the Control Centre's media tile: the
+     * artwork in the top-left corner, the title and the artist under it, and
+     * the transport as a row of three plain glyphs centred in the width of the
+     * pod (two elastic spacers split the leftover space in half). The glyphs
+     * are the Apple's ones the Control Centre uses as well.
+     *
+     * The panel of this pod opens from its header only: the transport has its
+     * own clicks, and a gesture on the whole card would swallow them. */
     _buildMusicCard() {
         const card = new St.BoxLayout({
             orientation: Clutter.Orientation.VERTICAL,
@@ -1698,6 +1775,7 @@ class MacOSNotificationCenter {
         const header = new St.BoxLayout({
             orientation: Clutter.Orientation.HORIZONTAL,
             style_class: 'mac-nc-card-header',
+            reactive: true,
         });
         header.add_child(icon('audio-x-generic-symbolic', 'mac-nc-mini-white', 12));
         header.add_child(new St.Label({
@@ -1705,52 +1783,151 @@ class MacOSNotificationCenter {
             style_class: 'mac-nc-card-title-white',
         }));
         card.add_child(header);
+        this._musicHeader = header;
 
-        const spacer = new St.Widget({y_expand: true});
-        card.add_child(spacer);
-
-        const bottom = new St.BoxLayout({
-            orientation: Clutter.Orientation.HORIZONTAL,
-            style_class: 'mac-nc-podcasts-bottom',
-            x_expand: true,
+        /* The artwork is the BACKGROUND of the box, not an icon inside it:
+         * that is the only way St crops it with the rounded corners and keeps
+         * it centred when the album art is not square. The Liquid Glass
+         * override keeps the extension from wiping that background. */
+        this._musicArt = new St.Widget({
+            style_class: 'mac-nc-music-art',
+            style: LG_OVERRIDE,
+            x_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.START,
         });
 
-        this._musicArt = new St.Bin({
-            style_class: 'mac-nc-cover-art',
-            child: icon('audio-x-generic-symbolic', 'mac-nc-mini-white', 20),
-        });
-        bottom.add_child(this._musicArt);
-
-        const trackInfo = new St.BoxLayout({
-            orientation: Clutter.Orientation.VERTICAL,
-            x_expand: true,
-        });
         this._musicTitle = new St.Label({
             text: 'Pulsar Music',
-            style_class: 'mac-nc-podcast-title',
+            style_class: 'mac-nc-music-title',
+            x_align: Clutter.ActorAlign.CENTER,
         });
         this._musicTitle.clutter_text.ellipsize = Pango.EllipsizeMode.END;
         this._musicArtist = new St.Label({
             text: t('NO_MEDIA'),
-            style_class: 'mac-nc-podcast-artist',
+            style_class: 'mac-nc-music-artist',
+            x_align: Clutter.ActorAlign.CENTER,
         });
         this._musicArtist.clutter_text.ellipsize = Pango.EllipsizeMode.END;
-        trackInfo.add_child(this._musicTitle);
-        trackInfo.add_child(this._musicArtist);
-        bottom.add_child(trackInfo);
 
+        /* The cover and the name are one block, and that whole block opens the
+         * panel: it is the easy target the pod was missing. */
+        const area = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
+            style_class: 'mac-nc-music-area',
+            x_expand: true,
+            y_expand: true,
+            y_align: Clutter.ActorAlign.START,
+        });
+        area.add_child(this._musicArt);
+        area.add_child(this._musicTitle);
+        area.add_child(this._musicArtist);
+        card.add_child(area);
+        this._musicArea = area;
+
+        const comandi = new St.BoxLayout({
+            orientation: Clutter.Orientation.HORIZONTAL,
+            style_class: 'mac-nc-music-controls',
+            x_expand: true,
+            y_expand: true,
+            y_align: Clutter.ActorAlign.END,
+        });
+        const spazio = () => new St.Widget({x_expand: true});
+        const trasporto = (nomeIcona, etichetta, classe, metodo) => {
+            const b = new St.Button({
+                style_class: 'mac-nc-music-btn',
+                can_focus: true,
+                reactive: true,
+                child: icon(nomeIcona, classe, 16),
+            });
+            try {
+                b.set_accessible_name(String(etichetta));
+            } catch (e) {}
+            b.connect('clicked', () => this._mprisCmd(metodo, false));
+            return b;
+        };
+        this._musicPrev = trasporto('nc:rewind', t('PANEL_PREVIOUS'), 'mac-nc-music-icon', 'Previous');
+        this._musicNext = trasporto('nc:forward', t('PANEL_NEXT'), 'mac-nc-music-icon', 'Next');
         this._playBtn = new St.Button({
-            style_class: 'mac-nc-podcast-play-btn',
+            style_class: 'mac-nc-music-btn',
             can_focus: true,
             reactive: true,
         });
-        this._playIcon = icon('media-playback-start-symbolic', 'mac-nc-play-icon', 12);
+        this._playIcon = icon('nc:play', 'mac-nc-music-play-icon', 18);
         this._playBtn.set_child(this._playIcon);
         this._playBtn.connect('clicked', () => this._togglePlayback());
-        bottom.add_child(this._playBtn);
+        comandi.add_child(spazio());
+        comandi.add_child(this._musicPrev);
+        comandi.add_child(this._playBtn);
+        comandi.add_child(this._musicNext);
+        comandi.add_child(spazio());
+        card.add_child(comandi);
 
-        card.add_child(bottom);
         return card;
+    }
+
+    /* The album art, as a local path.
+     *
+     * A remote cover (some players hand out an http URL) is downloaded once
+     * and cached: St cannot load an http image by itself. The Control Centre
+     * does exactly the same, so both read the same file when they can. */
+    _artPath(url, cb) {
+        if (!url) {
+            cb(null);
+            return;
+        }
+        if (url.startsWith('file://')) {
+            cb(decodeURIComponent(url.slice(7)));
+            return;
+        }
+        if (!url.startsWith('http')) {
+            cb(null);
+            return;
+        }
+        const somma = GLib.compute_checksum_for_string(GLib.ChecksumType.MD5, url, -1);
+        const cache = GLib.build_filenamev([GLib.get_user_cache_dir(), `macos-nc-art-${somma}.jpg`]);
+        if (GLib.file_test(cache, GLib.FileTest.EXISTS)) {
+            cb(cache);
+            return;
+        }
+        try {
+            const session = new Soup.Session();
+            const msg = Soup.Message.new('GET', url);
+            session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (sess, res) => {
+                try {
+                    const bytes = sess.send_and_read_finish(res);
+                    if (msg.get_status() !== Soup.Status.OK) {
+                        cb(null);
+                        return;
+                    }
+                    GLib.file_set_contents(cache, bytes.get_data());
+                    cb(cache);
+                } catch (e) {
+                    cb(null);
+                }
+            });
+        } catch (e) {
+            cb(null);
+        }
+    }
+
+    /* Paint the artwork of the closed pod. */
+    _setMusicArt(url) {
+        const box = this._musicArt;
+        if (!box)
+            return;
+        if (!url) {
+            try {
+                box.set_style(LG_OVERRIDE);
+            } catch (e) {}
+            return;
+        }
+        this._artPath(url, path => {
+            if (!path || !this._isAlive() || this._mprisArtUrl !== url)
+                return;
+            try {
+                box.set_style(`${LG_OVERRIDE} background-image: url("file://${path}"); background-size: cover;`);
+            } catch (e) {}
+        });
     }
 
     _refreshMedia() {
@@ -1769,8 +1946,8 @@ class MacOSNotificationCenter {
                 this._mprisPosTime = 0;
                 if (this._musicTitle) this._musicTitle.text = 'Pulsar Music';
                 if (this._musicArtist) this._musicArtist.text = t('NO_MEDIA');
-                if (this._playIcon) this._playIcon.icon_name = 'media-playback-start-symbolic';
-                if (this._musicArt) this._musicArt.set_child(icon('audio-x-generic-symbolic', 'mac-nc-mini-white', 20));
+                if (this._playIcon) this._playIcon.gicon = symbol('play');
+                if (this._musicArt) this._setMusicArt('');
                 return;
             }
             this._mprisPlayer = busName;
@@ -1787,8 +1964,14 @@ class MacOSNotificationCenter {
                         const artUrl = meta['mpris:artUrl']?.deepUnpack() ?? '';
                         const length = Number(meta['mpris:length']?.deepUnpack() ?? 0);
                         const position = Number(props['Position']?.deepUnpack() ?? 0);
+                        /* The shuffle and the repeat of the phone's player. */
+                        const shuffle = !!props['Shuffle']?.deepUnpack();
+                        const loop = String(props['LoopStatus']?.deepUnpack() ?? 'None');
 
                         this._mprisPlaying = (status === 'Playing');
+                        /* The artwork is only repainted when the track changes:
+                         * rebuilding it on every poll tick would be a busy loop. */
+                        const artePrima = this._mprisArtUrl;
                         /* Kept for the music panel: the card writes them into
                          * its labels, the panel reads them here. */
                         this._mprisTitle = title;
@@ -1797,25 +1980,16 @@ class MacOSNotificationCenter {
                         this._mprisLength = Number.isFinite(length) ? length : 0;
                         this._mprisPosition = Number.isFinite(position) ? position : 0;
                         this._mprisPosTime = GLib.get_monotonic_time();
+                        this._mprisShuffle = shuffle;
+                        this._mprisLoop = loop;
                         if (this._musicTitle) this._musicTitle.text = title;
                         if (this._musicArtist) this._musicArtist.text = artist;
                         if (this._playIcon) {
-                            this._playIcon.icon_name = this._mprisPlaying ? 'media-playback-pause-symbolic' : 'media-playback-start-symbolic';
+                            this._playIcon.gicon = symbol(this._mprisPlaying ? 'pause' : 'play');
                         }
 
-                        if (artUrl && this._musicArt) {
-                            try {
-                                const file = Gio.File.new_for_uri(artUrl);
-                                const gicon = new Gio.FileIcon({file});
-                                this._musicArt.set_child(new St.Icon({
-                                    gicon: gicon,
-                                    icon_size: 38,
-                                    style_class: 'mac-nc-cover-art',
-                                }));
-                            } catch (e) {
-                                this._musicArt.set_child(icon('audio-x-generic-symbolic', 'mac-nc-mini-white', 20));
-                            }
-                        }
+                        if (artUrl !== artePrima && this._musicArt)
+                            this._setMusicArt(artUrl);
                     } catch (e) {}
                 });
         });
@@ -1837,6 +2011,31 @@ class MacOSNotificationCenter {
 
     _togglePlayback() {
         this._mprisCmd('PlayPause', true);
+    }
+
+    /* Write an MPRIS property. The shuffle and the repeat are properties, not
+     * methods: the phone's player switches them with two taps and so does
+     * this one. */
+    _mprisSetProp(nome, valore) {
+        if (!this._mprisPlayer)
+            return;
+        try {
+            Gio.DBus.session.call(this._mprisPlayer, MPRIS_PATH, PLAYER_IFACE,
+                'Set', GLib.Variant.new('(sv)', [nome, valore]), null, null,
+                NONE, -1, null, () => this._refreshMedia());
+        } catch (e) {}
+    }
+
+    _mprisShuffle(v) {
+        this._mprisSetProp('Shuffle', new GLib.Variant('b', !!v));
+    }
+
+    /* The repeat cycles like the phone's: none, all, one. */
+    _mprisRepeat() {
+        const ordine = ['None', 'Playlist', 'Track'];
+        const i = ordine.indexOf(this._mprisLoop || 'None');
+        const prossimo = ordine[(i + 1) % ordine.length];
+        this._mprisSetProp('LoopStatus', new GLib.Variant('s', prossimo));
     }
 
     /* 7. Battery Widget (Square) */

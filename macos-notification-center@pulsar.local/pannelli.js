@@ -735,9 +735,21 @@ export function crea(nc, h) {
 
         const copertina = new St.Bin({
             style_class: 'mac-nc-phero',
+            style: h.lgOverride || '',
             x_align: Clutter.ActorAlign.CENTER,
         });
         box.add_child(copertina);
+
+        /* The artwork is the BACKGROUND of the box, not an icon inside it:
+         * that is the only way St crops it with the rounded corners and keeps
+         * it in the middle when the album art is not square. The glyph is the
+         * fallback for when there is no cover at all. */
+        const fallback = ic('audio-x-generic-symbolic', 'mac-nc-phero-generic', 96);
+        try {
+            fallback.x_align = Clutter.ActorAlign.CENTER;
+            fallback.y_align = Clutter.ActorAlign.CENTER;
+        } catch (e) {}
+        copertina.set_child(fallback);
 
         const titolo = new St.Label({text: 'Pulsar Music', style_class: 'mac-nc-pmusictitle', x_align: Clutter.ActorAlign.CENTER});
         const artista = new St.Label({text: '', style_class: 'mac-nc-partist', x_align: Clutter.ActorAlign.CENTER});
@@ -786,13 +798,40 @@ export function crea(nc, h) {
             style_class: 'mac-nc-pcontrols',
             x_align: Clutter.ActorAlign.CENTER,
         });
-        const prev = pulsante('media-skip-backward-symbolic', tr('PANEL_PREVIOUS', 'Previous'), () => h.mp.prev());
-        const play = pulsante('media-playback-start-symbolic', tr('PANEL_PLAY', 'Play'), () => h.mp.play(), 'mac-nc-pbutton-main', 24);
-        const next = pulsante('media-skip-forward-symbolic', tr('PANEL_NEXT', 'Next'), () => h.mp.next());
+        /* The transport is the one of the phone's big player: shuffle on the
+         * left, the two skips, the play in the middle, and the repeat on the
+         * right. Plain glyphs on the glass, no circles: the play is the
+         * biggest one and the skips stay quiet next to it. */
+        const shuffle = pulsante('nc:shuffle', tr('PANEL_SHUFFLE', 'Shuffle'), () => h.mp.shuffle(), 'mac-nc-pbutton-small', 18);
+        const prev = pulsante('nc:prev', tr('PANEL_PREVIOUS', 'Previous'), () => h.mp.prev(), 'mac-nc-pbutton-skip', 24);
+        const play = pulsante('nc:play', tr('PANEL_PLAY', 'Play'), () => h.mp.play(), 'mac-nc-pbutton-main', 26);
+        const next = pulsante('nc:next', tr('PANEL_NEXT', 'Next'), () => h.mp.next(), 'mac-nc-pbutton-skip', 24);
+        const repeat = pulsante('nc:repeat', tr('PANEL_REPEAT', 'Repeat'), () => h.mp.repeat(), 'mac-nc-pbutton-small', 18);
+        comandi.add_child(shuffle.bottone);
         comandi.add_child(prev.bottone);
         comandi.add_child(play.bottone);
         comandi.add_child(next.bottone);
+        comandi.add_child(repeat.bottone);
         box.add_child(comandi);
+
+        /* The entrance of the artwork: it grows into place from its centre
+         * while it fades in, the way the phone opens its player. The timings
+         * are the ones the Control Centre uses (animazione.json). */
+        const anim = (h.anim && typeof h.anim === 'object') ? h.anim : {};
+        if (anim.enabled !== false) {
+            const scala = Number(anim.enterScale) || 0.96;
+            const durata = Number(anim.enterDuration) || 240;
+            const assestamento = Number(anim.enterSettle) || 150;
+            const sforo = Number(anim.enterOvershoot) || 1.02;
+            try {
+                copertina.set_pivot_point(0.5, 0.5);
+                copertina.set_scale(scala);
+                copertina.opacity = 0;
+                copertina.ease({opacity: 255, duration: durata, mode: EASE});
+                copertina.ease({scale: sforo, duration: durata, mode: EASE});
+                copertina.ease({scale: 1, duration: assestamento, delay: durata, mode: EASE});
+            } catch (e) {}
+        }
 
         /* MPRIS gives microseconds: "3:07", or "1:02:33" for the long ones. */
         const durata = us => {
@@ -810,7 +849,13 @@ export function crea(nc, h) {
             const m = h.music() || {};
             titolo.text = String(m.title || 'Pulsar Music');
             artista.text = String(m.artist || tr('NO_MEDIA', 'Not playing'));
-            play.icona.icon_name = m.playing ? 'media-playback-pause-symbolic' : 'media-playback-start-symbolic';
+            play.icona.gicon = h.symbol(m.playing ? 'pause' : 'play');
+            /* The shuffle and the repeat are dimmed when they are off, the
+             * way the phone shows them. */
+            try {
+                shuffle.icona.opacity = m.shuffle ? 255 : 85;
+                repeat.icona.opacity = (m.loop && m.loop !== 'None') ? 255 : 85;
+            } catch (e) {}
             /* The button does the same thing either way; only what a screen
              * reader announces changes. */
             try {
@@ -830,9 +875,11 @@ export function crea(nc, h) {
                 posizione += GLib.get_monotonic_time() - m.posTime;
             if (lunghezza > 0)
                 posizione = Math.min(posizione, lunghezza);
+            /* The line is always there: a stream without a length shows it
+             * empty, with the times as dashes, the way the phone does. */
             const tracciata = lunghezza > 0;
-            corsa.visible = tracciata;
-            tempi.visible = tracciata;
+            corsa.visible = true;
+            tempi.visible = true;
             if (tracciata) {
                 const fraz = Math.max(0, Math.min(1, posizione / lunghezza));
                 /* On the very first tick the line has not been allocated yet,
@@ -845,6 +892,10 @@ export function crea(nc, h) {
                 riempi.set_style(`width: ${px(larga * fraz)}px;`);
                 passato.text = durata(posizione);
                 resto.text = `-${durata(lunghezza - posizione)}`;
+            } else {
+                riempi.set_style('width: 0px;');
+                passato.text = '0:00';
+                resto.text = '--:--';
             }
 
             const url = m.artUrl || '';
@@ -853,22 +904,34 @@ export function crea(nc, h) {
             if (url === ultimaCover)
                 return;
             ultimaCover = url;
-            let fatto = false;
-            if (url) {
+            if (!url) {
                 try {
-                    const gicon = new Gio.FileIcon({file: Gio.File.new_for_uri(url)});
-                    copertina.set_child(new St.Icon({
-                        gicon,
-                        /* Keep equal to .mac-nc-phero in the stylesheet: the
-                         * artwork fills the rounded square exactly. */
-                        icon_size: 280,
-                        style_class: 'mac-nc-phero-art',
-                    }));
-                    fatto = true;
+                    copertina.set_style(h.lgOverride || '');
                 } catch (e) {}
+                try {
+                    if (!copertina.get_child())
+                        copertina.set_child(fallback);
+                } catch (e) {}
+                return;
             }
-            if (!fatto)
-                copertina.set_child(ic('audio-x-generic-symbolic', 'mac-nc-phero-generic', 96));
+            /* The artwork is fetched by nc.js: a remote cover is downloaded
+             * and cached there, because St cannot load an http image. */
+            h.art(url, path => {
+                if (!vivente(miaGen) || url !== ultimaCover || !path)
+                    return;
+                try {
+                    copertina.set_child(null);
+                    copertina.set_style(`${h.lgOverride || ''} background-image: url("file://${path}"); background-size: cover;`);
+                } catch (e) {}
+                /* The new cover fades in on top of the old one. */
+                if (anim.enabled !== false) {
+                    const durataFade = Number(anim.enterDuration) || 240;
+                    try {
+                        copertina.opacity = 0;
+                        copertina.ease({opacity: 255, duration: durataFade, mode: EASE});
+                    } catch (e) {}
+                }
+            });
         };
         aggiornaFn = aggiornaLocale;
         aggiornaLocale();

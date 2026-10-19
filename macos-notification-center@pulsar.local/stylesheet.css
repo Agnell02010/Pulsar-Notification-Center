@@ -529,48 +529,66 @@
     color: #ffffff !important;
 }
 
-.mac-nc-podcasts-bottom {
-    spacing: 6px;
+/* The music pod: the cover centred and big, the name under it, and the
+ * transport at the bottom. The cover and the name are one block, and that
+ * whole block is the easy target that opens the panel.
+ *
+ * Like the big one in the panel, the artwork is the BACKGROUND of the box:
+ * St crops it with the rounded corners and keeps it centred whatever its
+ * proportions are. */
+.mac-nc-music-area {
+    spacing: 4px;
 }
 
-.mac-nc-cover-art {
-    width: 38px;
-    height: 38px;
-    border-radius: 12px;
-    background-color: rgba(0, 0, 0, 0.25);
+.mac-nc-music-art {
+    width: 84px;
+    height: 84px;
+    border-radius: 21px;
+    background-color: rgba(255, 255, 255, 0.12);
     background-size: cover;
-    background-position: center;
-    border: 1px solid rgba(255, 255, 255, 0.20);
+    margin: 2px 0px 0px 0px;
 }
 
-.mac-nc-podcast-title {
+.mac-nc-music-title {
     font-size: 11px;
     font-weight: 700;
+    text-align: center;
     color: #ffffff !important;
 }
 
-.mac-nc-podcast-artist {
+.mac-nc-music-artist {
     font-size: 9px;
+    text-align: center;
     opacity: 0.85;
     color: #ffffff !important;
 }
 
-.mac-nc-podcast-play-btn {
-    width: 26px;
-    height: 26px;
-    border-radius: 119px;
-    background-color: rgba(255, 255, 255, 0.25);
-    border: 1px solid rgba(255, 255, 255, 0.35);
-    padding: 0;
-}
-.mac-nc-podcast-play-btn:hover {
-    background-color: rgba(255, 255, 255, 0.40);
+.mac-nc-music-controls {
+    spacing: 0;
 }
 
-.mac-nc-play-icon {
-    icon-size: 12px;
-    width: 12px;
-    height: 12px;
+.mac-nc-music-btn {
+    width: 31px;
+    height: 31px;
+    border-radius: 16px;
+    padding: 0;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.mac-nc-music-btn:active .mac-nc-music-icon,
+.mac-nc-music-btn:active .mac-nc-music-play-icon {
+    opacity: 0.55;
+}
+
+.mac-nc-music-icon {
+    icon-size: 15px;
+    color: #ffffff !important;
+}
+
+.mac-nc-music-play-icon {
+    icon-size: 17px;
     color: #ffffff !important;
 }
 
@@ -934,62 +952,77 @@
     background-color: #ff453a;
 }
 
-/* -------- transport buttons (music) -------- */
+/* -------- transport buttons (music) --------
+ * Apple's transport is plain glyphs on the glass: no circles, no filled
+ * disc. The play glyph is the biggest one and the two skips stay quiet next
+ * to it, as on the phone. The glyphs themselves are the same files the
+ * Control Centre uses (icons/*-symbolic.svg). */
 .mac-nc-pbutton {
-    width: 40px;
-    height: 40px;
-    border-radius: 20px;
-    background-color: rgba(255, 255, 255, 0.14) !important;
+    padding: 0;
+    /* The glyphs are small, the touch target is not: the buttons keep a
+     * comfortable size around them. */
+    min-width: 40px;
+    min-height: 40px;
+    background-color: transparent !important;
     border: none !important;
     box-shadow: none !important;
-    x-align: center;
 }
 
 .mac-nc-pbutton:hover {
-    background-color: rgba(255, 255, 255, 0.24) !important;
+    background-color: transparent !important;
+}
+
+.mac-nc-pbutton:active .mac-nc-pbutton-icon,
+.mac-nc-pbutton:active .mac-nc-pbutton-main-icon {
+    opacity: 0.55;
 }
 
 .mac-nc-pbutton-icon {
-    icon-size: 16px;
+    icon-size: 24px;
     color: #ffffff;
 }
 
-/* The play button is the main action of the music panel, so it is the big
- * white one and the two skips stay quiet next to it, as on the phone. */
-.mac-nc-pbutton-main {
-    width: 54px;
-    height: 54px;
-    border-radius: 27px;
-    background-color: rgba(255, 255, 255, 0.92) !important;
+/* The two skips: a bar and a triangle, as on the phone. */
+.mac-nc-pbutton-skip-icon {
+    icon-size: 24px;
+    color: #ffffff;
 }
 
-.mac-nc-pbutton-main:hover {
-    background-color: #ffffff !important;
+/* The shuffle and the repeat: smaller, and dimmed when they are off. */
+.mac-nc-pbutton-small-icon {
+    icon-size: 18px;
+    color: #ffffff;
+}
+
+.mac-nc-pbutton-main {
+    background-color: transparent !important;
 }
 
 .mac-nc-pbutton-main-icon {
-    icon-size: 24px;
-    color: #101012;
+    icon-size: 34px;
+    color: #ffffff;
 }
 
 .mac-nc-pcontrols {
-    spacing: 22px;
-    margin-top: 22px;
+    spacing: 18px;
+    margin-top: 18px;
 }
 
 /* -------- music panel: the tall Now Playing card --------
  * The phone reads its expanded player artwork first, and the artwork is what
- * makes the card recognisable, so it leads here too and takes the height. */
+ * makes the card recognisable, so it leads here too and takes the height.
+ *
+ * The artwork is painted as the BACKGROUND of the box, not as an icon inside
+ * it: that is the only way St crops it with the rounded corners and keeps it
+ * in the middle when the album art is not square (an St.Icon ignores the
+ * border-radius and spills out of the box). */
 .mac-nc-phero {
-    width: 280px;
-    height: 280px;
-    border-radius: 24px;
+    width: 304px;
+    height: 304px;
+    border-radius: 28px;
     background-color: rgba(255, 255, 255, 0.10);
+    background-size: cover;
     margin-top: 6px;
-}
-
-.mac-nc-phero-art {
-    border-radius: 24px;
 }
 
 .mac-nc-phero-generic {
@@ -1001,12 +1034,12 @@
     font-size: 16px;
     font-weight: 600;
     color: #ffffff;
-    margin-top: 18px;
+    margin-top: 28px;
 }
 
 .mac-nc-partist {
     font-size: 12px;
-    margin-top: 1px;
+    margin-top: 3px;
     color: rgba(255, 255, 255, 0.75);
 }
 
@@ -1017,7 +1050,7 @@
     height: 4px;
     border-radius: 2px;
     background-color: rgba(255, 255, 255, 0.22);
-    margin: 22px 0px 0px 0px;
+    margin: 36px 0px 0px 0px;
 }
 
 .mac-nc-pprog-fill {
@@ -1027,7 +1060,7 @@
 }
 
 .mac-nc-ptimes {
-    margin: 6px 0px 0px 0px;
+    margin: 12px 0px 0px 0px;
 }
 
 .mac-nc-p-elapsed {
