@@ -940,38 +940,95 @@
     color: #ffffff;
 }
 
-.mac-nc-pcontrols {
-    spacing: 14px;
-    margin-top: 10px;
+/* The play button is the main action of the music panel, so it is the big
+ * white one and the two skips stay quiet next to it, as on the phone. */
+.mac-nc-pbutton-main {
+    width: 54px;
+    height: 54px;
+    border-radius: 27px;
+    background-color: rgba(255, 255, 255, 0.92) !important;
 }
 
-.mac-nc-pcover {
-    width: 120px;
-    height: 120px;
-    border-radius: 12px;
+.mac-nc-pbutton-main:hover {
+    background-color: #ffffff !important;
+}
+
+.mac-nc-pbutton-main-icon {
+    icon-size: 24px;
+    color: #101012;
+}
+
+.mac-nc-pcontrols {
+    spacing: 22px;
+    margin-top: 22px;
+}
+
+/* -------- music panel: the tall Now Playing card --------
+ * The phone reads its expanded player artwork first, and the artwork is what
+ * makes the card recognisable, so it leads here too and takes the height. */
+.mac-nc-phero {
+    width: 280px;
+    height: 280px;
+    border-radius: 24px;
     background-color: rgba(255, 255, 255, 0.10);
     margin-top: 6px;
 }
 
-.mac-nc-pcover-art {
-    border-radius: 12px;
+.mac-nc-phero-art {
+    border-radius: 24px;
 }
 
-.mac-nc-pcover-generic {
-    icon-size: 44px;
+.mac-nc-phero-generic {
+    icon-size: 96px;
     color: rgba(255, 255, 255, 0.75);
 }
 
 .mac-nc-pmusictitle {
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 600;
     color: #ffffff;
-    margin-top: 10px;
+    margin-top: 18px;
 }
 
 .mac-nc-partist {
     font-size: 12px;
+    margin-top: 1px;
     color: rgba(255, 255, 255, 0.75);
+}
+
+/* The progress line, with the elapsed time and what is left on the row under
+ * it. The width of the filled part is inline, in pixels: see the px() helper
+ * and pannelloMusica() in pannelli.js. */
+.mac-nc-pprog {
+    height: 4px;
+    border-radius: 2px;
+    background-color: rgba(255, 255, 255, 0.22);
+    margin: 22px 0px 0px 0px;
+}
+
+.mac-nc-pprog-fill {
+    height: 4px;
+    border-radius: 2px;
+    background-color: rgba(255, 255, 255, 0.92);
+}
+
+.mac-nc-ptimes {
+    margin: 6px 0px 0px 0px;
+}
+
+.mac-nc-p-elapsed {
+    font-size: 10px;
+    font-weight: 600;
+    width: 42px;
+    text-align: left;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.mac-nc-p-remaining {
+    font-size: 10px;
+    font-weight: 600;
+    text-align: right;
+    color: rgba(255, 255, 255, 0.55);
 }
 
 /* -------- month grid, panel size -------- */

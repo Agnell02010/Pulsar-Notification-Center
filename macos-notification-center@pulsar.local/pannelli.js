@@ -437,10 +437,16 @@ export function crea(nc, h) {
         return {riga: r, set};
     }
 
-    /* A round transport button (music panel). */
-    function pulsante(nomeIcona, etichetta, azione) {
-        const b = new St.Button({style_class: 'mac-nc-pbutton', can_focus: true, reactive: true});
-        const i = ic(nomeIcona, 'mac-nc-pbutton-icon', 16);
+    /* A round transport button (music panel). `classe`/`dimensione` are for the
+     * one that is the main action — on the phone the play button is visibly
+     * bigger than the two skips. */
+    function pulsante(nomeIcona, etichetta, azione, classe, dimensione) {
+        const b = new St.Button({
+            style_class: classe ? `mac-nc-pbutton ${classe}` : 'mac-nc-pbutton',
+            can_focus: true,
+            reactive: true,
+        });
+        const i = ic(nomeIcona, classe ? `${classe}-icon` : 'mac-nc-pbutton-icon', dimensione || 16);
         b.set_child(i);
         try {
             b.set_accessible_name(String(etichetta));
@@ -694,13 +700,17 @@ export function crea(nc, h) {
     }
 
     /* ---------- the music panel ---------- */
-    function pannelloMusica(box) {
+    /* The tall Now Playing card, the way the phone lays out its expanded
+     * player: artwork first and big, then who is playing what, the progress
+     * line with its two times under it, and the transport. The artwork is what
+     * makes the card recognisable, so it is the element that takes the height:
+     * this is the one panel meant to read as taller than it is wide. */
+    function pannelloMusica(box, miaGen) {
         box.add_child(testata(tr('MUSIC', 'Music')));
 
         const copertina = new St.Bin({
-            style_class: 'mac-nc-pcover',
+            style_class: 'mac-nc-phero',
             x_align: Clutter.ActorAlign.CENTER,
-            y_align: Clutter.ActorAlign.CENTER,
         });
         box.add_child(copertina);
 
@@ -714,18 +724,61 @@ export function crea(nc, h) {
         box.add_child(titolo);
         box.add_child(artista);
 
+        /* The progress line, and under it the elapsed time on the left and
+         * what is left on the right, as the phone shows it: the played part is
+         * solid white on a translucent track. */
+        const corsa = new St.BoxLayout({
+            orientation: Clutter.Orientation.HORIZONTAL,
+            style_class: 'mac-nc-pprog',
+            x_expand: true,
+        });
+        const riempi = new St.Widget({
+            style_class: 'mac-nc-pprog-fill',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        corsa.add_child(riempi);
+        box.add_child(corsa);
+
+        const tempi = new St.BoxLayout({
+            orientation: Clutter.Orientation.HORIZONTAL,
+            style_class: 'mac-nc-ptimes',
+            x_expand: true,
+        });
+        const passato = new St.Label({text: '0:00', style_class: 'mac-nc-p-elapsed'});
+        /* Right alignment is text-align in the stylesheet, not x_align: a
+         * label does not move its own text with an actor alignment. */
+        const resto = new St.Label({
+            text: '-0:00',
+            style_class: 'mac-nc-p-remaining',
+            x_expand: true,
+        });
+        tempi.add_child(passato);
+        tempi.add_child(resto);
+        box.add_child(tempi);
+
         const comandi = new St.BoxLayout({
             orientation: Clutter.Orientation.HORIZONTAL,
             style_class: 'mac-nc-pcontrols',
             x_align: Clutter.ActorAlign.CENTER,
         });
         const prev = pulsante('media-skip-backward-symbolic', tr('PANEL_PREVIOUS', 'Previous'), () => h.mp.prev());
-        const play = pulsante('media-playback-start-symbolic', tr('PANEL_PLAY', 'Play'), () => h.mp.play());
+        const play = pulsante('media-playback-start-symbolic', tr('PANEL_PLAY', 'Play'), () => h.mp.play(), 'mac-nc-pbutton-main', 24);
         const next = pulsante('media-skip-forward-symbolic', tr('PANEL_NEXT', 'Next'), () => h.mp.next());
         comandi.add_child(prev.bottone);
         comandi.add_child(play.bottone);
         comandi.add_child(next.bottone);
         box.add_child(comandi);
+
+        /* MPRIS gives microseconds: "3:07", or "1:02:33" for the long ones. */
+        const durata = us => {
+            const s = Math.max(0, Math.round((Number(us) || 0) / 1e6));
+            const h = Math.floor(s / 3600);
+            const m = Math.floor((s % 3600) / 60);
+            const sec = String(s % 60).padStart(2, '0');
+            return h
+                ? `${h}:${String(m).padStart(2, '0')}:${sec}`
+                : `${m}:${sec}`;
+        };
 
         let ultimaCover = null;
         const aggiornaLocale = () => {
@@ -741,6 +794,34 @@ export function crea(nc, h) {
                     : tr('PANEL_PLAY', 'Play')));
             } catch (e) {}
 
+            /* The poll reads the position every 1.5s and the track keeps going
+             * between two readings, so the bar is drawn from the reading plus
+             * however long ago it was taken. A stream reports no length: then
+             * there is nothing to measure and the line is hidden with its
+             * times rather than drawn empty. */
+            const lunghezza = Number(m.length) > 0 ? Number(m.length) : 0;
+            let posizione = Number(m.position) || 0;
+            if (m.playing && m.posTime)
+                posizione += GLib.get_monotonic_time() - m.posTime;
+            if (lunghezza > 0)
+                posizione = Math.min(posizione, lunghezza);
+            const tracciata = lunghezza > 0;
+            corsa.visible = tracciata;
+            tempi.visible = tracciata;
+            if (tracciata) {
+                const fraz = Math.max(0, Math.min(1, posizione / lunghezza));
+                /* On the very first tick the line has not been allocated yet,
+                 * so there is no length to fill: the panel measures itself
+                 * again right after it is on screen. */
+                let larga = 0;
+                try {
+                    larga = Number(corsa.get_transformed_size()[0]) || Number(corsa.width) || 0;
+                } catch (e) {}
+                riempi.set_style(`width: ${px(larga * fraz)}px;`);
+                passato.text = durata(posizione);
+                resto.text = `-${durata(lunghezza - posizione)}`;
+            }
+
             const url = m.artUrl || '';
             /* Only touch the cover when the track actually changed: rebuilding
              * a Gio.FileIcon every poll tick would be a busy loop. */
@@ -753,17 +834,35 @@ export function crea(nc, h) {
                     const gicon = new Gio.FileIcon({file: Gio.File.new_for_uri(url)});
                     copertina.set_child(new St.Icon({
                         gicon,
-                        icon_size: 116,
-                        style_class: 'mac-nc-pcover-art',
+                        /* Keep equal to .mac-nc-phero in the stylesheet: the
+                         * artwork fills the rounded square exactly. */
+                        icon_size: 280,
+                        style_class: 'mac-nc-phero-art',
                     }));
                     fatto = true;
                 } catch (e) {}
             }
             if (!fatto)
-                copertina.set_child(ic('audio-x-generic-symbolic', 'mac-nc-pcover-generic', 44));
+                copertina.set_child(ic('audio-x-generic-symbolic', 'mac-nc-phero-generic', 96));
         };
         aggiornaFn = aggiornaLocale;
         aggiornaLocale();
+        /* One more reading once the panel has been laid out, the same way the
+         * bars do it: the first call runs before the widgets have a size. */
+        delay(150, () => {
+            if (vivente(miaGen))
+                aggiornaLocale();
+        });
+
+        /* The drawer's own poll ticks every 1.5s, which is too coarse for a
+         * clock: this one runs at 1s and stops by itself the moment the panel
+         * is gone, because vivente() is false as soon as dettaglio is null. */
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1000, () => {
+            if (!vivente(miaGen))
+                return GLib.SOURCE_REMOVE;
+            aggiornaLocale();
+            return GLib.SOURCE_CONTINUE;
+        });
     }
 
     /* ---------- the battery panel ---------- */

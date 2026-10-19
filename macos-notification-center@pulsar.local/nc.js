@@ -332,6 +332,12 @@ class MacOSNotificationCenter {
         this._mprisTitle = null;
         this._mprisArtist = null;
         this._mprisArtUrl = '';
+        /* Track progress, kept as the reading plus the moment it was taken:
+         * the panel draws a bar that has to move every second while the poll
+         * below only asks MPRIS every 1.5, so it extrapolates from here. */
+        this._mprisLength = 0;
+        this._mprisPosition = 0;
+        this._mprisPosTime = 0;
         this._dead = false;
 
         try {
@@ -694,6 +700,10 @@ class MacOSNotificationCenter {
                 title: this._mprisTitle,
                 artist: this._mprisArtist,
                 artUrl: this._mprisArtUrl,
+                /* Microseconds, straight from MPRIS. */
+                length: this._mprisLength,
+                position: this._mprisPosition,
+                posTime: this._mprisPosTime,
             }),
             mp: {
                 play: () => this._mprisCmd('PlayPause', true),
@@ -1754,6 +1764,9 @@ class MacOSNotificationCenter {
                 this._mprisTitle = null;
                 this._mprisArtist = null;
                 this._mprisArtUrl = '';
+                this._mprisLength = 0;
+                this._mprisPosition = 0;
+                this._mprisPosTime = 0;
                 if (this._musicTitle) this._musicTitle.text = 'Pulsar Music';
                 if (this._musicArtist) this._musicArtist.text = t('NO_MEDIA');
                 if (this._playIcon) this._playIcon.icon_name = 'media-playback-start-symbolic';
@@ -1772,6 +1785,8 @@ class MacOSNotificationCenter {
                         const title = meta['xesam:title']?.deepUnpack() ?? 'Pulsar Music';
                         const artist = meta['xesam:artist']?.deepUnpack()?.[0] ?? meta['xesam:albumArtist']?.deepUnpack()?.[0] ?? 'Pulsar OS';
                         const artUrl = meta['mpris:artUrl']?.deepUnpack() ?? '';
+                        const length = Number(meta['mpris:length']?.deepUnpack() ?? 0);
+                        const position = Number(props['Position']?.deepUnpack() ?? 0);
 
                         this._mprisPlaying = (status === 'Playing');
                         /* Kept for the music panel: the card writes them into
@@ -1779,6 +1794,9 @@ class MacOSNotificationCenter {
                         this._mprisTitle = title;
                         this._mprisArtist = artist;
                         this._mprisArtUrl = artUrl;
+                        this._mprisLength = Number.isFinite(length) ? length : 0;
+                        this._mprisPosition = Number.isFinite(position) ? position : 0;
+                        this._mprisPosTime = GLib.get_monotonic_time();
                         if (this._musicTitle) this._musicTitle.text = title;
                         if (this._musicArtist) this._musicArtist.text = artist;
                         if (this._playIcon) {
