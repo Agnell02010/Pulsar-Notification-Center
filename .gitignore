@@ -1,0 +1,10 @@
+# Editor backups
+*~
+*.bak
+*.orig
+*.swp
+.DS_Store
+
+# Release archives (regenerated, not versioned)
+*.tar.gz
+*.zip
