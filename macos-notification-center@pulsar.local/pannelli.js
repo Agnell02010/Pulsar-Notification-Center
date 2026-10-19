@@ -904,7 +904,7 @@ export function crea(nc, h) {
              * how much of it is filled and how far the track is. It is logged
              * only when something changes, so the journal does not fill up
              * once a second. */
-            const riga = `pannello ${k}: barra larga ${Math.round(larga)}px, riempita ${riempita}px` +
+            const riga = `pannello musica: barra larga ${Math.round(larga)}px, riempita ${riempita}px` +
                 ` (posizione ${Math.round(posizione / 1e6)}s su ${Math.round(lunghezza / 1e6)}s, tempi "${passato.text}" "${resto.text}")`;
             if (riga !== ultimoLog) {
                 ultimoLog = riga;
@@ -962,6 +962,11 @@ export function crea(nc, h) {
             if (!vivente(miaGen))
                 return GLib.SOURCE_REMOVE;
             aggiornaLocale();
+            /* The layout rewrites the position of the panel every time it
+             * runs, so it is put back in the middle of the glass. */
+            try {
+                h.centra(dettaglio);
+            } catch (e) {}
             return GLib.SOURCE_CONTINUE;
         });
     }
@@ -1262,6 +1267,10 @@ export function crea(nc, h) {
             dettaglio = new St.BoxLayout({
                 orientation: Clutter.Orientation.VERTICAL,
                 style_class: 'mac-nc-panel',
+                /* The Liquid Glass override: the extension must not rewrite
+                 * the style of the panel (LG restores the one it captured
+                 * the first time it saw the widget). */
+                style: h.lgOverride || '',
                 x_expand: true,
                 y_expand: true,
             });
@@ -1270,6 +1279,26 @@ export function crea(nc, h) {
             } catch (e) {}
             principale.add_child(dettaglio);
             costruisci(k, dettaglio, miaGen);
+            /* The panel has to be in the middle of the glass: St centres it
+             * with its own content box, which is narrower than the pod, so
+             * what is inside ends up a few pixels to the right. The distance
+             * is measured and the panel is moved back by exactly that much.
+             * The layout settles a frame or two later, so it is repeated
+             * until the position stops moving. */
+            const centra = tentativi => {
+                if (!vivente(miaGen))
+                    return;
+                try {
+                    const [px] = dettaglio.get_transformed_position();
+                    if (!Number.isFinite(px)) {
+                        if (tentativi > 0)
+                            delay(80, () => centra(tentativi - 1));
+                        return;
+                    }
+                    h.centra(dettaglio);
+                } catch (e) {}
+            };
+            delay(60, () => centra(8));
             mostra();
             /* One line in the journal once the rows have trickled in: the host
              * (does it still carry the Liquid Glass hook?), its size, the
@@ -1277,6 +1306,10 @@ export function crea(nc, h) {
             delay(SOGLIA * 12 + 300, () => {
                 if (!vivente(miaGen))
                     return;
+                /* One more time, now that the layout has settled. */
+                try {
+                    h.centra(dettaglio);
+                } catch (e) {}
                 try {
                     const [cw, ch] = c.get_transformed_size();
                     const [dw, dh] = dettaglio.get_transformed_size();
@@ -1285,15 +1318,21 @@ export function crea(nc, h) {
                         ` | contenuto ${Math.round(dw)}x${Math.round(dh)}` +
                         ` | righe ${dettaglio.get_n_children()}`);
                     /* Where the artwork sits against the host: zero means
-                     * centred. */
+                     * centred. Every level is logged, so the level that
+                     * shifts it can be told apart from the others. */
                     try {
-                        const hero = dettaglio.get_children().find(c2 => c2.has_style_class_name('mac-nc-phero'));
-                        if (hero) {
-                            const hx = hero.get_transformed_position()[0] - c.get_transformed_position()[0];
-                            const hw = hero.get_transformed_size()[0];
-                            const scarso = hx - (cw - hw) / 2;
-                            log(`pannello ${k}: copertina ${Math.round(hw)}px a x=${Math.round(hx)} (${scarso >= 0 ? '+' : ''}${Math.round(scarso)} dal centro del vetro)`);
-                        }
+                        const [hx0] = c.get_transformed_position();
+                        const figli = principale ? principale.get_children() : [];
+                        const dove = a => {
+                            if (!a)
+                                return 'assente';
+                            const x = a.get_transformed_position()[0] - hx0;
+                            const w = a.get_transformed_size()[0];
+                            const scarso = x - (cw - w) / 2;
+                            return `${Math.round(w)}px a x=${Math.round(x)} (${scarso >= 0 ? '+' : ''}${Math.round(scarso)} dal centro del vetro)`;
+                        };
+                        const eroe = dettaglio.get_children().find(x => x.has_style_class_name && x.has_style_class_name('mac-nc-phero'));
+                        log(`pannello ${k}: wrapper ${dove(principale)} | pannello ${dove(dettaglio)} | copertina ${dove(eroe)}`);
                     } catch (e2) {}
                 } catch (e) {
                     log(`pannello ${k}: measure failed (${e})`);

@@ -577,8 +577,30 @@ class MacOSNotificationCenter {
             const [w, h] = this._root ? this._root.get_transformed_size() : [0, 0];
             debug(`sidebar ${Math.round(w)}x${Math.round(h)} cards=${(this._cards ?? []).length}`);
         } catch (e) {}
-        for (const card of this._cards ?? [])
-            debug(`widget  ${card.get_style_class_name()}  ${info(card)}`);
+        for (const card of this._cards ?? []) {
+            try {
+                debug(`widget  ${card.get_style_class_name()}  ${info(card)}`);
+            } catch (e) {
+                debug(`widget  ${card.get_style_class_name()}  (misura fallita: ${e})`);
+            }
+        }
+        /* Where the pieces of the music pod really are: the number after
+         * "centro" is the distance of the piece from the middle of the pod,
+         * zero means centred. */
+        try {
+            const card = this._musicCard;
+            const cx = card ? card.get_transformed_position()[0] : 0;
+            const cw = card ? card.get_transformed_size()[0] : 0;
+            const dove = a => {
+                if (!a)
+                    return 'assente';
+                const x = a.get_transformed_position()[0];
+                const w = a.get_transformed_size()[0];
+                const scarso = x - cx - (cw - w) / 2;
+                return `${Math.round(w)}px a x=${Math.round(x - cx)} (${scarso >= 0 ? '+' : ''}${Math.round(scarso)} dal centro del pod)`;
+            };
+            debug(`musica chiuso: pod ${Math.round(cw)}px | copertina ${dove(this._musicArt)} | blocco ${dove(this._musicArea)} | titolo ${dove(this._musicTitle)}`);
+        } catch (e) {}
         /* Where the pieces of the music pod really are: an artwork that is not
          * in the middle of its own pod has to be told apart from a pod that is
          * not in the middle of the drawer. The number after "centro" is the

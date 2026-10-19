@@ -536,8 +536,21 @@
  * Like the big one in the panel, the artwork is the BACKGROUND of the box:
  * St crops it with the rounded corners and keeps it centred whatever its
  * proportions are. */
+/* The artwork of the closed pod.
+ *
+ * The negative margins are not decoration: St centres a child of a vertical
+ * box with its own content box, which leaves the artwork six pixels to the
+ * right of the middle of the pod (measured: the block is centred, the
+ * artwork is +6px). A margin of -12px on both sides moves it back by six,
+ * because St compensates the margin by half in the centring. */
+/* St centres every child of a vertical box six pixels too far to the right
+ * (measured on the artwork of the music pod and on the panel of the
+ * widgets). The way to undo it is a margin on the right of the box: it
+ * shortens the space the children are centred in, and the six pixels move
+ * with it. A margin survives the layout, a translation does not. */
 .mac-nc-music-area {
     spacing: 4px;
+    margin-right: 12px;
 }
 
 .mac-nc-music-art {
@@ -690,8 +703,20 @@
  *
  * Only typography, separators and the one bar that needs a colour live here.
  */
+/* The panel lives inside the pod's own glass and has to be exactly as wide
+ * as it: with its own narrower width St leaves it off centre, and the
+ * artwork ends up a few pixels to the right of the glass. 340px is the
+ * content width of the pod (the drawer is 366px wide, the card takes it all
+ * and its padding and border take 26px).
+ *
+ * The negative margins are the same trick as the artwork of the closed pod:
+ * St centres the panel six pixels too far to the right. */
 .mac-nc-panel {
     spacing: 2px;
+    /* The right margin moves the panel six pixels to the left, the same
+     * distance St leaves it to the right: (340 - 12) / 2 = 164, and
+     * 13 + 164 + 6 = 183, the middle of the glass. */
+    margin: 0px 12px 0px 0px;
 }
 
 /* The wrapper holding the card's normal content while a panel is open. It must
