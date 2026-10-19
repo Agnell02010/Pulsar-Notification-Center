@@ -68,8 +68,9 @@ function nomeGiorno(iso) {
 export function crea(nc, h) {
     let card = null;        // the pod currently expanded, if any
     let chiave = null;      // which widget that pod is
-    let principale = null;  // the card's own content, parked while the panel is open
-    let dettaglio = null;   // the panel: an extra child of the same card
+    let principale = null;  // the wrapper holding the card's own content and the panel
+    let corpo = [];         // that card's own content, hidden while the panel is open
+    let dettaglio = null;   // the panel: an extra child of the same wrapper
     let morente = null;     // a panel being faded out, waiting to be removed
     let nascoste = [];      // the other pods, hidden while a panel is open
     let gen = 0;            // bumped on every open/close so stale timers bail out
@@ -153,6 +154,15 @@ export function crea(nc, h) {
     }
 
     /* ---------- shared pieces ---------- */
+
+    /* Inline lengths have to be finite: a NaN in an inline style poisons the
+     * layout of the whole panel (the shell then reports NaN sizes and the card
+     * collapses), and every length here comes from data that can be missing. */
+    function px(v) {
+        const n = Math.round(Number(v));
+        return Number.isFinite(n) ? String(n) : '0';
+    }
+
     function sep() {
         return new St.Widget({style_class: 'mac-nc-panel-sep', height: 1, x_expand: true});
     }
@@ -230,9 +240,13 @@ export function crea(nc, h) {
             orientation: Clutter.Orientation.HORIZONTAL,
             style_class: 'mac-nc-pbar',
         });
-        const span = Math.max(1, wMax - wMin);
-        const sinistra = Math.round(((min - wMin) / span) * TRACK);
-        const larghezza = Math.max(6, Math.round(((max - min) / span) * TRACK));
+        /* Every input here can be missing in the API answer, and a NaN would
+         * take the whole panel down with it: clamp the range first. */
+        const da = Number.isFinite(wMin) ? wMin : 0;
+        const a = Number.isFinite(wMax) ? wMax : 1;
+        const span = Math.max(1, a - da);
+        const sinistra = ((min - da) / span) * TRACK;
+        const larghezza = Math.max(6, ((max - min) / span) * TRACK);
         const segmento = new St.Widget({
             style_class: `mac-nc-pbar-fill ${classeTemp((min + max) / 2)}`,
             y_align: Clutter.ActorAlign.CENTER,
@@ -240,7 +254,7 @@ export function crea(nc, h) {
         /* St has no percentages and no flex weights, so the offset and the
          * length are inline CSS in pixels — inside a track whose width is
          * fixed by .mac-nc-pbar and kept equal to TRACK. */
-        segmento.set_style(`margin-left: ${sinistra}px; width: ${larghezza}px;`);
+        segmento.set_style(`margin-left: ${px(sinistra)}px; width: ${px(larghezza)}px;`);
         corsa.add_child(segmento);
         riga.add_child(corsa);
 
@@ -274,8 +288,9 @@ export function crea(nc, h) {
                 style_class: 'mac-nc-pnow-text',
                 x_expand: true,
             });
+            const temp = Number(corrente.temperature_2m);
             testo.add_child(new St.Label({
-                text: `${Math.round(corrente.temperature_2m)}°`,
+                text: `${Number.isFinite(temp) ? Math.round(temp) : '--'}°`,
                 style_class: 'mac-nc-ptemp',
             }));
             testo.add_child(new St.Label({
@@ -296,8 +311,18 @@ export function crea(nc, h) {
         }
 
         box.add_child(titoloSezione(tr('PANEL_10DAY', '10-Day Forecast')));
-        const wMax = Math.max(...temps);
-        const wMin = Math.min(...minime);
+        /* The week's extremes, over the values that are actually numbers: a
+         * single null in the answer would otherwise make Math.max() NaN and the
+         * bars meaningless. */
+        const numeri = a => a.map(Number).filter(Number.isFinite);
+        const tMax = numeri(temps);
+        const tMin = numeri(minime);
+        if (!tMax.length || !tMin.length) {
+            box.add_child(nota(tr('PANEL_NO_DATA', 'No forecast data')));
+            return;
+        }
+        const wMax = Math.max(...tMax);
+        const wMin = Math.min(...tMin);
         const codici = daily.weather_code || [];
         daily.time.slice(0, 10).forEach((iso, i) => {
             const min = Number(minime[i]);
@@ -395,8 +420,8 @@ export function crea(nc, h) {
             try {
                 valore.text = String(txt);
                 const w = traccia.get_transformed_size()[0] || traccia.width || 0;
-                const px = Math.max(0, Math.min(w, Math.round(w * (fraz || 0))));
-                riempi.set_style(`width: ${px}px;`);
+                const larghezza = Math.max(0, Math.min(w, w * (fraz || 0)));
+                riempi.set_style(`width: ${px(larghezza)}px;`);
                 const cls = `mac-nc-ptrack-fill ${classe || 'mac-nc-ptrack-ok'}`;
                 if (riempi.get_style_class_name() !== cls)
                     riempi.set_style_class_name(cls);
@@ -957,12 +982,13 @@ export function crea(nc, h) {
         morente = null;
         chiave = null;
         card = null;
-        if (principale) {
+        for (const f of corpo) {
             try {
-                principale.show();
+                f.show();
             } catch (e) {}
-            principale = null;
         }
+        corpo = [];
+        principale = null;
         for (const x of nascoste) {
             try {
                 x.show();
@@ -996,7 +1022,20 @@ export function crea(nc, h) {
             } catch (e) {}
 
             principale = impacchetta(c);
-            principale.hide();
+            /* Only the card's own content is hidden, never the wrapper: the
+             * panel lives inside the wrapper, and a hidden container is never
+             * allocated, so the panel would come out NaN-sized and the whole
+             * card would collapse. */
+            corpo = [];
+            try {
+                for (const f of principale.get_children())
+                    corpo.push(f);
+            } catch (e) {}
+            for (const f of corpo) {
+                try {
+                    f.hide();
+                } catch (e) {}
+            }
 
             nascondiAltri(c);
 
@@ -1051,6 +1090,8 @@ export function crea(nc, h) {
         const c = card;
         const p = principale;
         const ns = nascoste;
+        const cs = corpo;
+        corpo = [];
         dettaglio = null;
         morente = d;
         aggiornaFn = null;
@@ -1073,9 +1114,9 @@ export function crea(nc, h) {
                 if (d._gesto)
                     d._gesto.enabled = true;
             } catch (e) {}
-            if (p) {
+            for (const x of cs) {
                 try {
-                    p.show();
+                    x.show();
                 } catch (e) {}
             }
             for (const x of ns) {
