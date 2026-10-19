@@ -339,7 +339,14 @@ export function crea(nc, h) {
 
     /* ---------- shared rows ---------- */
 
-    /* A row that opens an application, macOS style: icon, label, chevron. */
+    /* A row that opens an application, macOS style: icon, label, chevron.
+     *
+     * `cmd` follows launch()'s own convention: one command line as a string —
+     * arguments and all, "gnome-control-center power" is one of these — or an
+     * array of alternative command lines to try in order. This is not the place
+     * for a command and its arguments as two array elements: an array means
+     * "or", so ['gnome-control-center', 'power'] would open the control centre
+     * home and never the power panel. */
     function rigaApp(cmd, etichetta, nomeIcona) {
         const r = new St.Button({
             style_class: 'mac-nc-papp',
@@ -611,7 +618,7 @@ export function crea(nc, h) {
                 box.add_child(rigaEvento(ev));
         }
         box.add_child(sep());
-        box.add_child(rigaApp(['gnome-calendar'], tr('PANEL_OPEN_CALENDAR', 'Open Calendar'),
+        box.add_child(rigaApp('gnome-calendar', tr('PANEL_OPEN_CALENDAR', 'Open Calendar'),
             'x-office-calendar-symbolic'));
     }
 
@@ -643,7 +650,7 @@ export function crea(nc, h) {
         riga.add_child(testo);
         box.add_child(riga);
         box.add_child(sep());
-        box.add_child(rigaApp(['gnome-calendar'], tr('PANEL_OPEN_TASKS', 'Open Reminders'),
+        box.add_child(rigaApp('gnome-calendar', tr('PANEL_OPEN_TASKS', 'Open Reminders'),
             'x-office-calendar-symbolic'));
     }
 
@@ -662,7 +669,7 @@ export function crea(nc, h) {
         box.add_child(carico.riga);
         box.add_child(attivo.riga);
         box.add_child(sep());
-        box.add_child(rigaApp(['gnome-system-monitor'], tr('PANEL_OPEN_MONITOR', 'Open Monitor'),
+        box.add_child(rigaApp('gnome-system-monitor', tr('PANEL_OPEN_MONITOR', 'Open Monitor'),
             'utilities-system-monitor-symbolic'));
 
         const aggiornaLocale = () => {
@@ -777,7 +784,8 @@ export function crea(nc, h) {
         });
         box.add_child(contenitore);
         box.add_child(sep());
-        box.add_child(rigaApp(['gnome-control-center', 'power'], tr('PANEL_POWER_SETTINGS', 'Energy Settings'),
+        box.add_child(rigaApp('gnome-control-center power',
+            tr('PANEL_POWER_SETTINGS', 'Energy Settings'),
             'preferences-system-symbolic'));
 
         let firma = null;
@@ -869,7 +877,8 @@ export function crea(nc, h) {
             righe.push({ora, offset, tz});
         }
         box.add_child(sep());
-        box.add_child(rigaApp(['gnome-clocks'], tr('PANEL_OPEN_CLOCKS', 'Open Clocks'),
+        box.add_child(rigaApp(['gnome-clocks', 'gnome-control-center datetime'],
+            tr('PANEL_OPEN_CLOCKS', 'Open Clocks'),
             'preferences-system-time-symbolic'));
 
         /* The card's clocks tick while the drawer is open; this does the same
@@ -917,7 +926,13 @@ export function crea(nc, h) {
 
     /* Hide the other pods, and any row left with nothing visible in it. The
      * widget grid is rows of two: hiding only the pods would leave their empty
-     * rows behind and the panel would start 24px too low. */
+     * rows behind and the panel would start 24px too low.
+     *
+     * The row holding the open pod is never hidden. It only *looks* empty if
+     * the test is "everything in it is either the open pod or hidden" — which
+     * is true of [open pod, hidden sibling], and hiding that row takes the open
+     * pod (and therefore its panel) off the screen. Only a row where every
+     * child is hidden is really empty. */
     function nascondiAltri(c) {
         nascoste = [];
         for (const x of (h.cards() || [])) {
@@ -938,7 +953,9 @@ export function crea(nc, h) {
                 if (nascoste.includes(p))
                     continue;
                 const figli = p.get_children();
-                if (figli.every(f => f === c || nascoste.includes(f))) {
+                if (figli.includes(c))
+                    continue;
+                if (figli.every(f => nascoste.includes(f))) {
                     p.hide();
                     nascoste.push(p);
                 }
