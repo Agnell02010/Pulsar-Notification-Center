@@ -126,14 +126,28 @@
     width: 177px;
     /* 168px (was 154): a month grid can span six weeks (March, August and
      * November 2026, for instance) and at 154px the last row plus the event
-     * line spilled outside the card. In practice the content drives the height
-     * (measured 190px for a five week month), so this stays a floor. */
+     * line spilled outside the card.
+     *
+     * These are a size, not a floor: `height` is a floor on the natural height
+     * but `max-height` is a CAP on it (St takes the MIN of the two), so the
+     * closed pod measures 190px and may not grow a pixel more. That is what
+     * keeps the grid square — and it is also why a panel taller than a square
+     * could not fit until the class swap below was added. */
     height: 168px;
     min-height: 168px;
     max-height: 168px;
 }
 
 .mac-nc-wide {
+    width: 350px;
+}
+
+/* While one of those pods is showing a panel it must be free to grow: St's
+ * max-height is a cap on the natural height, not a suggestion (see the comment
+ * in pannelli.js), and every panel is taller than the square. The width has to
+ * stay wide enough for the row; with its row-mate hidden the card expands to
+ * the whole row anyway. */
+.mac-nc-square-open {
     width: 350px;
 }
 

@@ -153,6 +153,31 @@ export function crea(nc, h) {
         return p;
     }
 
+    /* A pod showing a panel has to grow past its own square, and .mac-nc-square
+     * will not let it: St's max-height is a *cap on the natural height*
+     * (st_theme_node_adjust_preferred_height takes MIN of the two), so the
+     * 168px in that rule is a ceiling, not the "floor" its comment claimed.
+     * The square class is therefore swapped for one that only asks for a wide
+     * card while the panel is open, and swapped back when it closes. Only the
+     * four square pods carry the class, the wide ones exit immediately. */
+    function libera(c) {
+        try {
+            if (!c.has_style_class_name('mac-nc-square'))
+                return;
+            c.remove_style_class_name('mac-nc-square');
+            c.add_style_class_name('mac-nc-square-open');
+        } catch (e) {}
+    }
+
+    function vincola(c) {
+        try {
+            if (!c || !c.has_style_class_name('mac-nc-square-open'))
+                return;
+            c.remove_style_class_name('mac-nc-square-open');
+            c.add_style_class_name('mac-nc-square');
+        } catch (e) {}
+    }
+
     /* ---------- shared pieces ---------- */
 
     /* Inline lengths have to be finite: a NaN in an inline style poisons the
@@ -1097,6 +1122,7 @@ export function crea(nc, h) {
         dettaglio = null;
         morente = null;
         chiave = null;
+        vincola(card);
         card = null;
         for (const f of corpo) {
             try {
@@ -1129,6 +1155,8 @@ export function crea(nc, h) {
 
             card = c;
             chiave = k;
+            /* The pod has to be free to grow before the panel is measured. */
+            libera(c);
             /* While the panel is open a click anywhere inside the card must not
              * re-enter here: the panel is a child of the card, so the card's own
              * click gesture would fire on every click on the panel. */
@@ -1230,6 +1258,9 @@ export function crea(nc, h) {
                 if (d._gesto)
                     d._gesto.enabled = true;
             } catch (e) {}
+            /* Back to the square size in the same frame the content comes
+             * back: nothing is left inside that needs the room. */
+            vincola(c);
             for (const x of cs) {
                 try {
                     x.show();
