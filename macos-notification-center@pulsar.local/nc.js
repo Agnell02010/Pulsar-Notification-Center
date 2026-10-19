@@ -579,6 +579,27 @@ class MacOSNotificationCenter {
         } catch (e) {}
         for (const card of this._cards ?? [])
             debug(`widget  ${card.get_style_class_name()}  ${info(card)}`);
+        /* Where the pieces of the music pod really are: an artwork that is not
+         * in the middle of its own pod has to be told apart from a pod that is
+         * not in the middle of the drawer. The number after "centro" is the
+         * distance of the piece from the middle of the pod: zero means
+         * centred. */
+        try {
+            const card = this._musicCard;
+            if (card) {
+                const [cx] = card.get_transformed_position();
+                const [cw] = card.get_transformed_size();
+                const dove = a => {
+                    if (!a)
+                        return 'assente';
+                    const x = a.get_transformed_position()[0];
+                    const w = a.get_transformed_size()[0];
+                    const scarso = x - cx - (cw - w) / 2;
+                    return `${Math.round(w)}px a x=${Math.round(x - cx)} (${scarso >= 0 ? '+' : ''}${Math.round(scarto)} dal centro del pod)`;
+                };
+                debug(`musica chiuso: pod ${Math.round(cw)}px | copertina ${dove(this._musicArt)} | blocco ${dove(this._musicArea)}`);
+            }
+        } catch (e) {}
         try {
             const kids = this._notifList ? this._notifList.get_children() : [];
             debug(`notifications=${kids.length}`);
@@ -832,21 +853,24 @@ class MacOSNotificationCenter {
                 return;
             }
             const gesto = new Clutter.ClickGesture();
-            /* More than one target is allowed: the music pod is opened from
-             * its header and from the cover, so the panel is easy to reach. */
+            /* One gesture per target: the same gesture on an actor and on its
+             * ancestor would fire twice for one click, and the panel would
+             * open and close right away. */
             const bersagli = Array.isArray(bersaglio) ? bersaglio.filter(x => x) : [bersaglio || card];
-            for (const b of bersagli)
-                b.add_action(gesto);
-            gesto.connect('recognize', () => {
-                if (!this._pan)
+            for (const b of bersagli) {
+                const g = new Clutter.ClickGesture();
+                g.connect('recognize', () => {
+                    if (!this._pan)
+                        return true;
+                    try {
+                        this._pan.apri(chiave, card, g);
+                    } catch (e) {
+                        console.warn(`macos-nc: panel ${chiave}: ${e}`);
+                    }
                     return true;
-                try {
-                    this._pan.apri(chiave, card, gesto);
-                } catch (e) {
-                    console.warn(`macos-nc: panel ${chiave}: ${e}`);
-                }
-                return true;
-            });
+                });
+                b.add_action(g);
+            }
         } catch (e) {
             console.warn(`macos-nc: panel ${chiave} not wired: ${e}`);
         }
@@ -865,6 +889,10 @@ class MacOSNotificationCenter {
         const scroll = new St.ScrollView({
             hscrollbar_policy: St.PolicyType.NEVER,
             vscrollbar_policy: St.PolicyType.AUTOMATIC,
+            /* The scrollbar must not take width from the content: when it
+             * did, opening a panel made the whole grid narrower (the pods
+             * were squeezed) and everything inside looked out of place. */
+            overlay_scrollbars: true,
             style_class: 'mac-nc-scroll',
             x_expand: true,
             y_expand: true,
@@ -986,10 +1014,10 @@ class MacOSNotificationCenter {
         row4.add_child(this._musicCard);
         row4.add_child(this._batteryCard);
         widgetsBox.add_child(row4);
-        /* The music pod opens from its header, from the cover and from the
-         * name: the transport has its own clicks and a gesture on the whole
-         * card would swallow them. */
-        this._pannello(this._musicCard, 'music', [this._musicHeader, this._musicArt, this._musicArea]);
+        /* The music pod opens from its header and from the block with the
+         * cover and the name: the transport has its own clicks and a gesture
+         * on the whole card would swallow them. */
+        this._pannello(this._musicCard, 'music', [this._musicHeader, this._musicArea]);
         this._pannello(this._batteryCard, 'battery');
 
         // Row 5: World Clock (Wide Card)

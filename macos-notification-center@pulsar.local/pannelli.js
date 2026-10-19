@@ -1284,6 +1284,17 @@ export function crea(nc, h) {
                     log(`pannello ${k}: host ${Math.round(cw)}x${Math.round(ch)} ${pod}` +
                         ` | contenuto ${Math.round(dw)}x${Math.round(dh)}` +
                         ` | righe ${dettaglio.get_n_children()}`);
+                    /* Where the artwork sits against the host: zero means
+                     * centred. */
+                    try {
+                        const hero = dettaglio.get_children().find(c2 => c2.has_style_class_name('mac-nc-phero'));
+                        if (hero) {
+                            const hx = hero.get_transformed_position()[0] - c.get_transformed_position()[0];
+                            const hw = hero.get_transformed_size()[0];
+                            const scarso = hx - (cw - hw) / 2;
+                            log(`pannello ${k}: copertina ${Math.round(hw)}px a x=${Math.round(hx)} (${scarso >= 0 ? '+' : ''}${Math.round(scarso)} dal centro del vetro)`);
+                        }
+                    } catch (e2) {}
                 } catch (e) {
                     log(`pannello ${k}: measure failed (${e})`);
                 }
