@@ -1788,10 +1788,14 @@ class MacOSNotificationCenter {
         /* The artwork is the BACKGROUND of the box, not an icon inside it:
          * that is the only way St crops it with the rounded corners and keeps
          * it centred when the album art is not square. The Liquid Glass
-         * override keeps the extension from wiping that background. */
+         * override keeps the extension from wiping that background.
+         *
+         * It is reactive: clicking the picture opens the panel, and that is
+         * the easiest target the pod has. */
         this._musicArt = new St.Widget({
             style_class: 'mac-nc-music-art',
             style: LG_OVERRIDE,
+            reactive: true,
             x_align: Clutter.ActorAlign.CENTER,
             y_align: Clutter.ActorAlign.START,
         });

@@ -546,6 +546,9 @@
     border-radius: 21px;
     background-color: rgba(255, 255, 255, 0.12);
     background-size: cover;
+    /* A dark cover would otherwise vanish on the glass: the hairline keeps
+     * the shape of the picture readable. */
+    border: 1px solid rgba(255, 255, 255, 0.22);
     margin: 2px 0px 0px 0px;
 }
 
@@ -1022,6 +1025,9 @@
     border-radius: 28px;
     background-color: rgba(255, 255, 255, 0.10);
     background-size: cover;
+    /* Same reason as the small one: a dark cover needs a hairline to keep
+     * the shape of the picture on the glass. */
+    border: 1px solid rgba(255, 255, 255, 0.22);
     margin-top: 6px;
 }
 
@@ -1049,7 +1055,7 @@
 .mac-nc-pprog {
     height: 4px;
     border-radius: 2px;
-    background-color: rgba(255, 255, 255, 0.22);
+    background-color: rgba(255, 255, 255, 0.30);
     margin: 36px 0px 0px 0px;
 }
 
@@ -1064,18 +1070,18 @@
 }
 
 .mac-nc-p-elapsed {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
-    width: 42px;
+    width: 46px;
     text-align: left;
-    color: rgba(255, 255, 255, 0.55);
+    color: rgba(255, 255, 255, 0.78);
 }
 
 .mac-nc-p-remaining {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     text-align: right;
-    color: rgba(255, 255, 255, 0.55);
+    color: rgba(255, 255, 255, 0.78);
 }
 
 /* -------- month grid, panel size -------- */

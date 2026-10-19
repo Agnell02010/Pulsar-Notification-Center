@@ -845,6 +845,7 @@ export function crea(nc, h) {
         };
 
         let ultimaCover = null;
+        let ultimoLog = '';
         const aggiornaLocale = () => {
             const m = h.music() || {};
             titolo.text = String(m.title || 'Pulsar Music');
@@ -880,22 +881,34 @@ export function crea(nc, h) {
             const tracciata = lunghezza > 0;
             corsa.visible = true;
             tempi.visible = true;
+            let larga = 0;
+            let riempita = 0;
             if (tracciata) {
                 const fraz = Math.max(0, Math.min(1, posizione / lunghezza));
                 /* On the very first tick the line has not been allocated yet,
                  * so there is no length to fill: the panel measures itself
                  * again right after it is on screen. */
-                let larga = 0;
                 try {
                     larga = Number(corsa.get_transformed_size()[0]) || Number(corsa.width) || 0;
                 } catch (e) {}
-                riempi.set_style(`width: ${px(larga * fraz)}px;`);
+                riempita = Math.round(larga * fraz);
+                riempi.set_style(`width: ${px(riempita)}px;`);
                 passato.text = durata(posizione);
                 resto.text = `-${durata(lunghezza - posizione)}`;
             } else {
                 riempi.set_style('width: 0px;');
                 passato.text = '0:00';
                 resto.text = '--:--';
+            }
+            /* One line in the journal about the progress line: how long it is,
+             * how much of it is filled and how far the track is. It is logged
+             * only when something changes, so the journal does not fill up
+             * once a second. */
+            const riga = `pannello ${k}: barra larga ${Math.round(larga)}px, riempita ${riempita}px` +
+                ` (posizione ${Math.round(posizione / 1e6)}s su ${Math.round(lunghezza / 1e6)}s, tempi "${passato.text}" "${resto.text}")`;
+            if (riga !== ultimoLog) {
+                ultimoLog = riga;
+                log(riga);
             }
 
             const url = m.artUrl || '';
