@@ -65,6 +65,21 @@ else
   warn "Do it by hand:  gnome-extensions enable $UUID"
 fi
 
+# ------------------------------------------------- stock control centre
+# The Control Centre shipped with Pulsar OS carries its own, older Notification
+# Center: if it stays enabled, two drawers open on the same date menu (the old
+# one with "La Coruña", the old transport glyphs, and the fixed blue tint).
+# Disabling it is the one step that makes the new drawer the only one.
+STOCK_CC="macos-control-centre@pulsar.local"
+if gnome-extensions list 2>/dev/null | grep -qx "$STOCK_CC"; then
+  if gnome-extensions disable "$STOCK_CC" 2>/dev/null; then
+    ok "Stock Control Centre disabled (it shipped the old Notification Center)"
+  else
+    warn "Disable the stock Control Centre by hand:"
+    warn "  gnome-extensions disable $STOCK_CC"
+  fi
+fi
+
 # --------------------------------------------------------- Liquid Glass
 echo
 if gnome-extensions list 2>/dev/null | grep -q '^liquid-glass@'; then

@@ -10,7 +10,19 @@ performance, weather, music, battery, world clock).
 - **Look:** the glass is drawn by the [Liquid Glass](https://github.com/Agnell02010/Pulsar-Liquid-Glass)
   extension; this extension only builds the widgets and tags them so Liquid
   Glass can glass them.
+- **Companion:** the [Pulsar CC 27](https://github.com/Agnell02010/Pulsar-CC-27-Gnome)
+  Control Center is the matching top-right panel.
 - **License:** GPL-2.0-or-later (see `LICENSE`)
+
+> **Coming from the stock Pulsar OS Control Centre?**
+> `macos-control-centre@pulsar.local` (the one shipped with the ISO) contains
+> its own **old** Notification Center with the same date menu. Keep only one
+> drawer: disable the stock extension before using this one. The installer
+> does it automatically when the stock extension is present.
+>
+> ```bash
+> gnome-extensions disable macos-control-centre@pulsar.local
+> ```
 
 ## Install
 
