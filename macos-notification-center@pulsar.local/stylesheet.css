@@ -719,6 +719,13 @@
     margin: 0px 12px 0px 0px;
 }
 
+/* Only the music panel is narrower than the glass: the artwork sets its
+ * width, so the title, the bar and the transport line up with the cover.
+ * Every other panel keeps the full width of the card it lives in. */
+.mac-nc-panel-music {
+    width: 304px;
+}
+
 /* The wrapper holding the card's normal content while a panel is open. It must
  * not change anything about how that content was laid out. */
 .mac-nc-panel-main {
@@ -956,13 +963,15 @@
     color: #ffffff;
 }
 
+/* The track is deliberately brighter than the old 16%: the bars sit on the
+ * glass and vanished over light artwork. The width is set inline, in pixels:
+ * see rigaBarra() in pannelli.js. */
 .mac-nc-ptrack {
     height: 5px;
     border-radius: 3px;
-    background-color: rgba(255, 255, 255, 0.16);
+    background-color: rgba(255, 255, 255, 0.42);
 }
 
-/* The width is set inline, in pixels: see rigaBarra() in pannelli.js. */
 .mac-nc-ptrack-fill {
     height: 5px;
     border-radius: 3px;
@@ -989,8 +998,8 @@
     padding: 0;
     /* The glyphs are small, the touch target is not: the buttons keep a
      * comfortable size around them. */
-    min-width: 40px;
-    min-height: 40px;
+    min-width: 44px;
+    min-height: 44px;
     background-color: transparent !important;
     border: none !important;
     box-shadow: none !important;
@@ -1010,30 +1019,88 @@
     color: #ffffff;
 }
 
-/* The two skips: a bar and a triangle, as on the phone. */
-.mac-nc-pbutton-skip-icon {
-    icon-size: 24px;
-    color: #ffffff;
+/* The shuffle and the repeat: smaller, and quiet when they are off. */
+.mac-nc-pbutton-small {
+    min-width: 44px;
+    min-height: 44px;
 }
 
-/* The shuffle and the repeat: smaller, and dimmed when they are off. */
 .mac-nc-pbutton-small-icon {
-    icon-size: 18px;
+    icon-size: 22px;
     color: #ffffff;
 }
 
 .mac-nc-pbutton-main {
     background-color: transparent !important;
+    min-width: 52px;
+    min-height: 52px;
 }
 
+/* Play and pause are the biggest glyphs on the row, as on the phone: the two
+ * bars of the pause and the rounded triangle of the play read at a glance,
+ * while the skips stay a step smaller. */
 .mac-nc-pbutton-main-icon {
-    icon-size: 34px;
+    icon-size: 36px;
     color: #ffffff;
 }
 
+.mac-nc-pbutton-skip {
+    min-width: 44px;
+    min-height: 44px;
+}
+
+.mac-nc-pbutton-skip-icon {
+    icon-size: 26px;
+    color: #ffffff;
+}
+
+/* Feedback on press for every glyph: shuffle and repeat had none, so they
+ * looked like they could not be clicked at all. */
+.mac-nc-pbutton:active .mac-nc-pbutton-small-icon,
+.mac-nc-pbutton:active .mac-nc-pbutton-skip-icon {
+    opacity: 0.55;
+}
+
 .mac-nc-pcontrols {
-    spacing: 18px;
+    spacing: 22px;
+    margin-top: 16px;
+}
+
+/* The volume row at the bottom of the phone's player: speaker on the left,
+ * the slider taking the rest. */
+.mac-nc-pvol {
+    spacing: 10px;
     margin-top: 18px;
+}
+
+.mac-nc-pvol-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 15px;
+    padding: 0;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.mac-nc-pvol-btn:hover {
+    background-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.mac-nc-pvol-icon {
+    icon-size: 16px;
+    color: #ffffff;
+}
+
+/* The shell's Slider takes its colours from these custom properties. They are
+ * overridden here so the bar is white on the glass, like the reference, and
+ * the handle is a dot instead of the default ring. */
+.mac-nc-pvol .slider {
+    -barlevel-height: 4px;
+    -barlevel-background-color: rgba(255, 255, 255, 0.22);
+    -barlevel-active-background-color: rgba(255, 255, 255, 0.95);
+    -slider-handle-radius: 6px;
+    color: #222226;
 }
 
 /* -------- music panel: the tall Now Playing card --------
@@ -1045,15 +1112,18 @@
  * in the middle when the album art is not square (an St.Icon ignores the
  * border-radius and spills out of the box). */
 .mac-nc-phero {
-    width: 304px;
-    height: 304px;
-    border-radius: 28px;
+    /* 302 + the 1px hairline = 304, the width of the panel: the artwork spans
+     * the card exactly like the one in the reference. Square, as it is on the
+     * phone: a rectangle made the cover look cropped. */
+    width: 302px;
+    height: 302px;
+    border-radius: 16px;
     background-color: rgba(255, 255, 255, 0.10);
     background-size: cover;
     /* Same reason as the small one: a dark cover needs a hairline to keep
      * the shape of the picture on the glass. */
     border: 1px solid rgba(255, 255, 255, 0.22);
-    margin-top: 6px;
+    margin-top: 4px;
 }
 
 .mac-nc-phero-generic {
@@ -1061,37 +1131,91 @@
     color: rgba(255, 255, 255, 0.75);
 }
 
+/* Title and artist on the left, the "..." on the right: the row under the
+ * artwork of the phone's player is not centred. */
+.mac-nc-pnowhead {
+    spacing: 8px;
+    margin: 14px 0px 0px 0px;
+}
+
+.mac-nc-pnowtext {
+    spacing: 0px;
+}
+
+.mac-nc-pnow-more,
+.mac-nc-pnow-star {
+    width: 30px;
+    height: 30px;
+    border-radius: 15px;
+    padding: 0;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.mac-nc-pnow-more:hover,
+.mac-nc-pnow-star:hover {
+    background-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+/* A glyph, not a themed icon: the outline and the filled star are two
+ * different characters, so the state is visible under every icon theme. */
+.mac-nc-pnow-star-icon {
+    font-size: 18px;
+    color: rgba(255, 255, 255, 0.62);
+}
+
+.mac-nc-pnow-more-dots {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: rgba(255, 255, 255, 0.65);
+}
+
 .mac-nc-pmusictitle {
-    font-size: 16px;
-    font-weight: 600;
+    font-size: 17px;
+    font-weight: 700;
     color: #ffffff;
-    margin-top: 28px;
 }
 
 .mac-nc-partist {
     font-size: 12px;
-    margin-top: 3px;
-    color: rgba(255, 255, 255, 0.75);
+    margin-top: 2px;
+    color: rgba(255, 255, 255, 0.72);
 }
 
 /* The progress line, with the elapsed time and what is left on the row under
  * it. The width of the filled part is inline, in pixels: see the px() helper
  * and pannelloMusica() in pannelli.js. */
+/* The 20px strip that takes the clicks; the 4px line is drawn inside it. */
+.mac-nc-pprog-hit {
+    height: 20px;
+    margin: 10px 0px 0px 0px;
+}
+
 .mac-nc-pprog {
     height: 4px;
     border-radius: 2px;
-    background-color: rgba(255, 255, 255, 0.30);
-    margin: 36px 0px 0px 0px;
+    background-color: rgba(255, 255, 255, 0.40);
 }
 
 .mac-nc-pprog-fill {
     height: 4px;
     border-radius: 2px;
-    background-color: rgba(255, 255, 255, 0.92);
+    background-color: rgba(255, 255, 255, 0.98);
+}
+
+/* The white dot on the edge of the played part, as in the reference. The
+ * negative margin centres it on the edge instead of sitting next to it. */
+.mac-nc-pprog-knob {
+    width: 12px;
+    height: 12px;
+    border-radius: 6px;
+    margin-left: -6px;
 }
 
 .mac-nc-ptimes {
-    margin: 12px 0px 0px 0px;
+    margin: 8px 0px 0px 0px;
 }
 
 .mac-nc-p-elapsed {

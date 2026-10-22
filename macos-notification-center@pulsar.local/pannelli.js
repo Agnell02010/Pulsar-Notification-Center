@@ -26,6 +26,10 @@ import GLib from 'gi://GLib';
 import Pango from 'gi://Pango';
 import St from 'gi://St';
 
+/* Shell's own slider (0..1), the same one the Quick Settings use for the
+ * volume: it already handles dragging, scroll and keyboard. */
+import {Slider} from 'resource:///org/gnome/shell/ui/slider.js';
+
 const EASE = Clutter.AnimationMode.EASE_OUT_CUBIC;
 
 /* The track of the daily temperature bar, in pixels. It is a fixed width on
@@ -101,6 +105,23 @@ export function crea(nc, h) {
         } catch (e) {}
     };
     const vivente = g => g === gen && !!dettaglio;
+
+    /* Liquid Glass walks *every* St.Widget inside a pod (our cards carry
+     * `quick-toggle`) and forces `background-color: transparent !important` on
+     * it, unless the widget's own style already contains that exact string. So
+     * every bar drawn inside a panel was invisible: the glass erased it.
+     *
+     * `paint()` writes the marker Liquid Glass looks for and then the colour we
+     * actually want (the later declaration wins), plus anything else the row
+     * needs — a width, a margin. This is the same trick the album art uses. */
+    const MARK = h.lgOverride || 'background-color: transparent !important;';
+    const paint = (a, colore, extra = '') => {
+        if (!a)
+            return;
+        try {
+            a.set_style(`${MARK} background-color: ${colore} !important; ${extra}`);
+        } catch (e) {}
+    };
 
     /* True for the pods that are a St.Button (the calendar). A St.Bin holds a
      * single child, set with set_child(): it will never allocate a second one,
@@ -238,6 +259,15 @@ export function crea(nc, h) {
         return 'mac-nc-pbar-caldo';
     }
 
+    /* The same colours as the classes above, as plain values: a bar inside a
+     * pod has to carry its colour inline (see paint() below). */
+    function coloreTemp(media) {
+        if (media < 5) return '#64d2ff';
+        if (media < 14) return '#40c8e0';
+        if (media < 23) return '#ffd60a';
+        return '#ff9f0a';
+    }
+
     /* One day: weekday, icon, low, a bar for the day's range inside the week's
      * range, high. The bar is the macOS reading of a forecast: the eye compares
      * the days at a glance. */
@@ -265,6 +295,7 @@ export function crea(nc, h) {
             orientation: Clutter.Orientation.HORIZONTAL,
             style_class: 'mac-nc-pbar',
         });
+        paint(corsa, 'rgba(255, 255, 255, 0.22)');
         /* Every input here can be missing in the API answer, and a NaN would
          * take the whole panel down with it: clamp the range first. */
         const da = Number.isFinite(wMin) ? wMin : 0;
@@ -273,13 +304,15 @@ export function crea(nc, h) {
         const sinistra = ((min - da) / span) * TRACK;
         const larghezza = Math.max(6, ((max - min) / span) * TRACK);
         const segmento = new St.Widget({
-            style_class: `mac-nc-pbar-fill ${classeTemp((min + max) / 2)}`,
+            style_class: 'mac-nc-pbar-fill',
             y_align: Clutter.ActorAlign.CENTER,
         });
         /* St has no percentages and no flex weights, so the offset and the
          * length are inline CSS in pixels — inside a track whose width is
-         * fixed by .mac-nc-pbar and kept equal to TRACK. */
-        segmento.set_style(`margin-left: ${px(sinistra)}px; width: ${px(larghezza)}px;`);
+         * fixed by .mac-nc-pbar and kept equal to TRACK. The colour is inline
+         * as well, or Liquid Glass would erase it (see paint()). */
+        paint(segmento, coloreTemp((min + max) / 2),
+            `margin-left: ${px(sinistra)}px; width: ${px(larghezza)}px;`);
         corsa.add_child(segmento);
         riga.add_child(corsa);
 
@@ -444,19 +477,25 @@ export function crea(nc, h) {
             style_class: 'mac-nc-ptrack',
             x_expand: true,
         });
+        paint(traccia, 'rgba(255, 255, 255, 0.30)');
         const riempi = new St.Widget({style_class: 'mac-nc-ptrack-fill'});
         traccia.add_child(riempi);
         r.add_child(traccia);
 
+        /* Same colours as the mac-nc-ptrack-* classes, inline: Liquid Glass
+         * erases the class colours inside a pod (see paint()). */
+        const COLORI = {
+            'mac-nc-ptrack-ok': '#30d158',
+            'mac-nc-ptrack-warn': '#ffd60a',
+            'mac-nc-ptrack-hot': '#ff453a',
+        };
         const set = (txt, fraz, classe) => {
             try {
                 valore.text = String(txt);
                 const w = traccia.get_transformed_size()[0] || traccia.width || 0;
                 const larghezza = Math.max(0, Math.min(w, w * (fraz || 0)));
-                riempi.set_style(`width: ${px(larghezza)}px;`);
-                const cls = `mac-nc-ptrack-fill ${classe || 'mac-nc-ptrack-ok'}`;
-                if (riempi.get_style_class_name() !== cls)
-                    riempi.set_style_class_name(cls);
+                paint(riempi, COLORI[classe] || COLORI['mac-nc-ptrack-ok'],
+                    `width: ${px(larghezza)}px;`);
             } catch (e) {}
         };
         return {riga: r, set};
@@ -731,6 +770,9 @@ export function crea(nc, h) {
      * makes the card recognisable, so it is the element that takes the height:
      * this is the one panel meant to read as taller than it is wide. */
     function pannelloMusica(box, miaGen) {
+        /* The artwork is the ruler of this panel: only the music card is as
+         * narrow as the phone's cover. The other panels stay full width. */
+        box.add_style_class_name('mac-nc-panel-music');
         box.add_child(testata(tr('MUSIC', 'Music')));
 
         const copertina = new St.Bin({
@@ -751,30 +793,186 @@ export function crea(nc, h) {
         } catch (e) {}
         copertina.set_child(fallback);
 
-        const titolo = new St.Label({text: 'Pulsar Music', style_class: 'mac-nc-pmusictitle', x_align: Clutter.ActorAlign.CENTER});
-        const artista = new St.Label({text: '', style_class: 'mac-nc-partist', x_align: Clutter.ActorAlign.CENTER});
+        /* Like the phone: the title and the artist are two lines on the left,
+         * with a quiet "..." on the right. Not centred — that was one of the
+         * things that made it read as "not Apple Music". */
+        const rigaTitolo = new St.BoxLayout({
+            orientation: Clutter.Orientation.HORIZONTAL,
+            style_class: 'mac-nc-pnowhead',
+            x_expand: true,
+        });
+        const testi = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
+            style_class: 'mac-nc-pnowtext',
+            x_expand: true,
+        });
+        const titolo = new St.Label({
+            text: 'Pulsar Music',
+            style_class: 'mac-nc-pmusictitle',
+            x_align: Clutter.ActorAlign.START,
+            x_expand: true,
+        });
+        const artista = new St.Label({
+            text: '',
+            style_class: 'mac-nc-partist',
+            x_align: Clutter.ActorAlign.START,
+            x_expand: true,
+        });
         for (const l of [titolo, artista]) {
             try {
                 l.clutter_text.ellipsize = Pango.EllipsizeMode.END;
             } catch (e) {}
         }
-        box.add_child(titolo);
-        box.add_child(artista);
+        testi.add_child(titolo);
+        testi.add_child(artista);
+        rigaTitolo.add_child(testi);
 
-        /* The progress line, and under it the elapsed time on the left and
-         * what is left on the right, as the phone shows it: the played part is
-         * solid white on a translucent track. */
+        /* The favourite star, next to the "..." as on the phone. No player
+         * exposes a "favourite" over MPRIS, so the state is kept here, in a
+         * small JSON file keyed by title and artist: it survives tracks,
+         * restarts and reboots. */
+        const PREFS = GLib.build_filenamev([
+            GLib.get_user_config_dir(), 'pulsar-cc', 'preferiti.json',
+        ]);
+        let preferiti = new Set();
+        try {
+            const [ok, bytes] = GLib.file_get_contents(PREFS);
+            if (ok) {
+                const j = JSON.parse(new TextDecoder('utf-8').decode(bytes));
+                if (Array.isArray(j))
+                    preferiti = new Set(j.map(String));
+            }
+        } catch (e) {}
+        const chiaveBrano = () => {
+            const m = h.music() || {};
+            return `${m.title || ''}|${m.artist || ''}`;
+        };
+        const stella = new St.Button({
+            style_class: 'mac-nc-pnow-star',
+            can_focus: true,
+            reactive: true,
+        });
+        /* Draw the star as a glyph, not as a themed icon: the symbolic icon
+         * looked identical whether it was on or off under some icon themes,
+         * which made the button look dead. The filled and hollow stars are two
+         * different characters and the colour is written inline. */
+        const stellaIcona = new St.Label({
+            text: '☆',
+            style_class: 'mac-nc-pnow-star-icon',
+            x_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        try {
+            stellaIcona.set_pivot_point(0.5, 0.5);
+        } catch (e) {}
+        stella.set_child(stellaIcona);
+        try {
+            stella.set_accessible_name(String(tr('FAVOURITE', 'Favourite')));
+        } catch (e) {}
+        const mostraStella = () => {
+            const acceso = preferiti.has(chiaveBrano());
+            try {
+                stellaIcona.text = acceso ? '★' : '☆';
+            } catch (e) {}
+            try {
+                /* The marker has to stay in the style: Liquid Glass skips a
+                 * widget that carries it, and only then does the colour
+                 * survive its next restyle. */
+                stellaIcona.style = acceso
+                    ? `${MARK} color: #ffd60a;`
+                    : `${MARK} color: rgba(255, 255, 255, 0.62);`;
+            } catch (e) {}
+        };
+        stella.connect('clicked', () => {
+            const k = chiaveBrano();
+            if (!k || k === '|')
+                return;
+            if (preferiti.has(k))
+                preferiti.delete(k);
+            else
+                preferiti.add(k);
+            try {
+                GLib.mkdir_with_parents(GLib.path_get_dirname(PREFS), 0o755);
+                GLib.file_set_contents(PREFS, JSON.stringify([...preferiti]));
+            } catch (e) {}
+            mostraStella();
+            /* A small pop on the glyph: even when the star is at the edge of
+             * the panel the tap is visibly acknowledged. */
+            try {
+                stellaIcona.ease({
+                    scale: 1.35,
+                    duration: 90,
+                    mode: EASE,
+                    onComplete: () => {
+                        try {
+                            stellaIcona.ease({scale: 1, duration: 130, mode: EASE});
+                        } catch (e) {}
+                    },
+                });
+            } catch (e) {}
+            log(`preferito ${preferiti.has(k) ? 'aggiunto' : 'tolto'}: ${k}`);
+        });
+        mostraStella();
+        rigaTitolo.add_child(stella);
+
+        /* The "..." of the phone opens the player itself; there is no menu to
+         * show here, so it brings the player to the front. */
+        const altro = new St.Button({
+            style_class: 'mac-nc-pnow-more',
+            can_focus: true,
+            reactive: true,
+        });
+        altro.set_child(new St.Label({text: '···', style_class: 'mac-nc-pnow-more-dots'}));
+        try {
+            altro.set_accessible_name(String(tr('MUSIC', 'Music')));
+        } catch (e) {}
+        altro.connect('clicked', () => {
+            /* Bring the player to the front (MPRIS Raise), and start it if it
+             * is not running. This is the "..." of the phone: it opens the
+             * player, it does not open a menu we do not have. */
+            try {
+                h.mp.raise();
+            } catch (e) {
+                log(`3 punti: ${e.message}`);
+            }
+        });
+        rigaTitolo.add_child(altro);
+        box.add_child(rigaTitolo);
+
+        /* The progress line, with the elapsed time on the left and what is
+         * left on the right, as the phone shows it. The knob sits on the edge
+         * of the filled part, so the line reads exactly like the one in the
+         * reference. */
+        /* The line is 4px, which is right on the glass but impossible to hit
+         * with a finger: the Bin around it is 20px tall and takes the clicks.
+         * The bar itself still draws at 4px in the middle. */
+        const corsaHit = new St.Bin({
+            style_class: 'mac-nc-pprog-hit',
+            x_expand: true,
+            reactive: true,
+        });
         const corsa = new St.BoxLayout({
             orientation: Clutter.Orientation.HORIZONTAL,
             style_class: 'mac-nc-pprog',
             x_expand: true,
+            x_align: Clutter.ActorAlign.FILL,
+            y_align: Clutter.ActorAlign.CENTER,
         });
+        paint(corsa, 'rgba(255, 255, 255, 0.32)');
         const riempi = new St.Widget({
             style_class: 'mac-nc-pprog-fill',
             y_align: Clutter.ActorAlign.CENTER,
         });
+        paint(riempi, 'rgba(255, 255, 255, 0.98)', 'width: 0px;');
+        const pallino = new St.Widget({
+            style_class: 'mac-nc-pprog-knob',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        paint(pallino, '#ffffff');
         corsa.add_child(riempi);
-        box.add_child(corsa);
+        corsa.add_child(pallino);
+        corsaHit.set_child(corsa);
+        box.add_child(corsaHit);
 
         const tempi = new St.BoxLayout({
             orientation: Clutter.Orientation.HORIZONTAL,
@@ -782,15 +980,25 @@ export function crea(nc, h) {
             x_expand: true,
         });
         const passato = new St.Label({text: '0:00', style_class: 'mac-nc-p-elapsed'});
-        /* Right alignment is text-align in the stylesheet, not x_align: a
-         * label does not move its own text with an actor alignment. */
         const resto = new St.Label({
             text: '-0:00',
             style_class: 'mac-nc-p-remaining',
-            x_expand: true,
         });
-        tempi.add_child(passato);
-        tempi.add_child(resto);
+        /* One cell per side, both expanding, the first anchored left and the
+         * second right. Two bare labels made the "-2:13" sit next to the
+         * elapsed time whenever the label's natural width was the whole row. */
+        const cellaPassato = new St.Bin({
+            x_expand: true,
+            x_align: Clutter.ActorAlign.START,
+        });
+        cellaPassato.set_child(passato);
+        const cellaResto = new St.Bin({
+            x_expand: true,
+            x_align: Clutter.ActorAlign.END,
+        });
+        cellaResto.set_child(resto);
+        tempi.add_child(cellaPassato);
+        tempi.add_child(cellaResto);
         box.add_child(tempi);
 
         const comandi = new St.BoxLayout({
@@ -798,15 +1006,14 @@ export function crea(nc, h) {
             style_class: 'mac-nc-pcontrols',
             x_align: Clutter.ActorAlign.CENTER,
         });
-        /* The transport is the one of the phone's big player: shuffle on the
-         * left, the two skips, the play in the middle, and the repeat on the
-         * right. Plain glyphs on the glass, no circles: the play is the
-         * biggest one and the skips stay quiet next to it. */
-        const shuffle = pulsante('nc:shuffle', tr('PANEL_SHUFFLE', 'Shuffle'), () => h.mp.shuffle(), 'mac-nc-pbutton-small', 18);
-        const prev = pulsante('nc:prev', tr('PANEL_PREVIOUS', 'Previous'), () => h.mp.prev(), 'mac-nc-pbutton-skip', 24);
-        const play = pulsante('nc:play', tr('PANEL_PLAY', 'Play'), () => h.mp.play(), 'mac-nc-pbutton-main', 26);
-        const next = pulsante('nc:next', tr('PANEL_NEXT', 'Next'), () => h.mp.next(), 'mac-nc-pbutton-skip', 24);
-        const repeat = pulsante('nc:repeat', tr('PANEL_REPEAT', 'Repeat'), () => h.mp.repeat(), 'mac-nc-pbutton-small', 18);
+        /* The transport of the phone's big player: shuffle on the left, the
+         * two skips, the play in the middle (the biggest glyph), the two
+         * skips, the repeat on the right. Plain glyphs on the glass. */
+        const shuffle = pulsante('nc:shuffle', tr('PANEL_SHUFFLE', 'Shuffle'), () => h.mp.shuffle(), 'mac-nc-pbutton-small', 22);
+        const prev = pulsante('nc:prev', tr('PANEL_PREVIOUS', 'Previous'), () => h.mp.prev(), 'mac-nc-pbutton-skip', 26);
+        const play = pulsante('nc:play', tr('PANEL_PLAY', 'Play'), () => h.mp.play(), 'mac-nc-pbutton-main', 36);
+        const next = pulsante('nc:next', tr('PANEL_NEXT', 'Next'), () => h.mp.next(), 'mac-nc-pbutton-skip', 26);
+        const repeat = pulsante('nc:repeat', tr('PANEL_REPEAT', 'Repeat'), () => h.mp.repeat(), 'mac-nc-pbutton-small', 22);
         comandi.add_child(shuffle.bottone);
         comandi.add_child(prev.bottone);
         comandi.add_child(play.bottone);
@@ -814,22 +1021,112 @@ export function crea(nc, h) {
         comandi.add_child(repeat.bottone);
         box.add_child(comandi);
 
+        /* Volume, the row at the bottom of the phone's player: speaker on the
+         * left (a click mutes) and the slider. PipeWire is what the system
+         * uses, so wpctl is the one that changes it — nc.js runs it in the
+         * background, never on the shell's main loop. */
+        const rigaVol = new St.BoxLayout({
+            orientation: Clutter.Orientation.HORIZONTAL,
+            style_class: 'mac-nc-pvol',
+            x_expand: true,
+        });
+        const volBtn = new St.Button({
+            style_class: 'mac-nc-pvol-btn',
+            can_focus: true,
+            reactive: true,
+        });
+        const volIcon = ic('audio-volume-medium-symbolic', 'mac-nc-pvol-icon', 16);
+        volBtn.set_child(volIcon);
+        rigaVol.add_child(volBtn);
+        const volume = new Slider(0.5);
+        volume.x_expand = true;
+        rigaVol.add_child(volume);
+        box.add_child(rigaVol);
+
+        let sincronizzandoVolume = false;
+        let timerVolume = 0;
+        let ultimoInvioVolume = 0;
+        const iconaVolume = (v, muto) => {
+            const nome = (muto || v <= 0.001) ? 'audio-volume-muted-symbolic'
+                : v < 0.33 ? 'audio-volume-low-symbolic'
+                : v < 0.66 ? 'audio-volume-medium-symbolic'
+                : 'audio-volume-high-symbolic';
+            try {
+                volIcon.icon_name = nome;
+                volIcon.opacity = muto ? 120 : 255;
+            } catch (e) {}
+        };
+        const mostraVolume = (v, muto) => {
+            sincronizzandoVolume = true;
+            try {
+                volume.value = muto ? 0 : Math.max(0, Math.min(1, Number(v) || 0));
+            } catch (e) {}
+            sincronizzandoVolume = false;
+            iconaVolume(Number(v) || 0, !!muto);
+        };
+        try {
+            h.volume?.get(mostraVolume);
+        } catch (e) {}
+        volBtn.connect('clicked', () => {
+            try {
+                h.volume?.toggleMute();
+            } catch (e) {}
+            /* The system applies the change asynchronously: read it back. */
+            delay(180, () => {
+                if (vivente(miaGen)) {
+                    try {
+                        h.volume?.get(mostraVolume);
+                    } catch (e) {}
+                }
+            });
+        });
+        /* Throttle, not debounce: the old 130ms quiet period restarted on
+         * every movement, so the system volume only changed when the pointer
+         * stopped. Now the first movement writes at once and, while the drag
+         * continues, at most one write every 40ms — the sound follows the
+         * slider instead of waiting for the release. */
+        const scriviVolume = v => {
+            ultimoInvioVolume = GLib.get_monotonic_time();
+            try {
+                h.volume?.set(v);
+            } catch (e) {}
+        };
+        volume.connect('notify::value', () => {
+            if (sincronizzandoVolume)
+                return;
+            const v = Math.max(0, Math.min(1, Number(volume.value) || 0));
+            iconaVolume(v, false);
+            const ora = GLib.get_monotonic_time();
+            if (!timerVolume && (ora - ultimoInvioVolume) >= 40000) {
+                scriviVolume(v);
+                return;
+            }
+            if (timerVolume)
+                return;
+            timerVolume = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 40, () => {
+                timerVolume = 0;
+                const attuale = Math.max(0, Math.min(1, Number(volume.value) || 0));
+                scriviVolume(attuale);
+                return GLib.SOURCE_REMOVE;
+            });
+        });
+
         /* The entrance of the artwork: it grows into place from its centre
          * while it fades in, the way the phone opens its player. The timings
          * are the ones the Control Centre uses (animazione.json). */
         const anim = (h.anim && typeof h.anim === 'object') ? h.anim : {};
         if (anim.enabled !== false) {
             const scala = Number(anim.enterScale) || 0.96;
-            const durata = Number(anim.enterDuration) || 240;
+            const durataAnim = Number(anim.enterDuration) || 240;
             const assestamento = Number(anim.enterSettle) || 150;
             const sforo = Number(anim.enterOvershoot) || 1.02;
             try {
                 copertina.set_pivot_point(0.5, 0.5);
                 copertina.set_scale(scala);
                 copertina.opacity = 0;
-                copertina.ease({opacity: 255, duration: durata, mode: EASE});
-                copertina.ease({scale: sforo, duration: durata, mode: EASE});
-                copertina.ease({scale: 1, duration: assestamento, delay: durata, mode: EASE});
+                copertina.ease({opacity: 255, duration: durataAnim, mode: EASE});
+                copertina.ease({scale: sforo, duration: durataAnim, mode: EASE});
+                copertina.ease({scale: 1, duration: assestamento, delay: durataAnim, mode: EASE});
             } catch (e) {}
         }
 
@@ -844,18 +1141,99 @@ export function crea(nc, h) {
                 : `${m}:${sec}`;
         };
 
+        /* Seeking on the progress line.
+         *
+         * Press and drag: the line, the dot and the two times follow the
+         * pointer at once (that is the preview), and the player is only told
+         * once, on release — exactly what the phone does. A plain click is a
+         * press and release in the same place, so it seeks too. */
+        let trascinandoBarra = false;
+        let anteprimaBarra = null;
+        const largaBarra = () => {
+            try {
+                return Number(corsa.get_transformed_size()[0]) || Number(corsa.width) || 0;
+            } catch (e) {
+                return 0;
+            }
+        };
+        const frazioneDa = evento => {
+            const larga = largaBarra();
+            if (!larga)
+                return null;
+            try {
+                const [sx] = evento.get_coords();
+                const [ax] = corsa.get_transformed_position();
+                return Math.max(0, Math.min(1, (sx - ax) / larga));
+            } catch (e) {
+                return null;
+            }
+        };
+        const disegnaAnteprima = f => {
+            const lunghezza = Number((h.music() || {}).length) || 0;
+            if (lunghezza <= 0)
+                return;
+            const larga = largaBarra();
+            const riempita = Math.max(6, Math.round(larga * f));
+            paint(riempi, 'rgba(255, 255, 255, 0.98)', `width: ${px(riempita)}px;`);
+            passato.text = durata(lunghezza * f);
+            resto.text = `-${durata(lunghezza * (1 - f))}`;
+        };
+        corsaHit.connect('button-press-event', (a, ev) => {
+            const f = frazioneDa(ev);
+            if (f === null)
+                return Clutter.EVENT_PROPAGATE;
+            trascinandoBarra = true;
+            anteprimaBarra = f;
+            disegnaAnteprima(f);
+            return Clutter.EVENT_STOP;
+        });
+        corsaHit.connect('motion-event', (a, ev) => {
+            if (!trascinandoBarra)
+                return Clutter.EVENT_PROPAGATE;
+            const f = frazioneDa(ev);
+            if (f === null)
+                return Clutter.EVENT_PROPAGATE;
+            anteprimaBarra = f;
+            disegnaAnteprima(f);
+            return Clutter.EVENT_STOP;
+        });
+        const fineBarra = () => {
+            if (!trascinandoBarra)
+                return;
+            trascinandoBarra = false;
+            const f = anteprimaBarra;
+            anteprimaBarra = null;
+            if (f === null || f === undefined)
+                return;
+            try {
+                h.mp.seek(f);
+            } catch (e) {}
+        };
+        corsaHit.connect('button-release-event', () => {
+            fineBarra();
+            return Clutter.EVENT_STOP;
+        });
+
         let ultimaCover = null;
         let ultimoLog = '';
+        let ultimaChiave = null;
         const aggiornaLocale = () => {
             const m = h.music() || {};
             titolo.text = String(m.title || 'Pulsar Music');
             artista.text = String(m.artist || tr('NO_MEDIA', 'Not playing'));
+            /* The star follows the track, not the clock: redraw it only when
+             * the track changes. */
+            const chiave = chiaveBrano();
+            if (chiave !== ultimaChiave) {
+                ultimaChiave = chiave;
+                mostraStella();
+            }
             play.icona.gicon = h.symbol(m.playing ? 'pause' : 'play');
-            /* The shuffle and the repeat are dimmed when they are off, the
-             * way the phone shows them. */
+            /* Shuffle and repeat are quiet when off, solid when on — the phone
+             * keeps them visible instead of graying them out. */
             try {
-                shuffle.icona.opacity = m.shuffle ? 255 : 85;
-                repeat.icona.opacity = (m.loop && m.loop !== 'None') ? 255 : 85;
+                shuffle.icona.opacity = m.shuffle ? 255 : 130;
+                repeat.icona.opacity = (m.loop && m.loop !== 'None') ? 255 : 130;
             } catch (e) {}
             /* The button does the same thing either way; only what a screen
              * reader announces changes. */
@@ -868,47 +1246,55 @@ export function crea(nc, h) {
             /* The poll reads the position every 1.5s and the track keeps going
              * between two readings, so the bar is drawn from the reading plus
              * however long ago it was taken. A stream reports no length: then
-             * there is nothing to measure and the line is hidden with its
-             * times rather than drawn empty. */
+             * the line stays there, empty, with dashes as the times. */
             const lunghezza = Number(m.length) > 0 ? Number(m.length) : 0;
             let posizione = Number(m.position) || 0;
             if (m.playing && m.posTime)
                 posizione += GLib.get_monotonic_time() - m.posTime;
             if (lunghezza > 0)
                 posizione = Math.min(posizione, lunghezza);
-            /* The line is always there: a stream without a length shows it
-             * empty, with the times as dashes, the way the phone does. */
             const tracciata = lunghezza > 0;
             corsa.visible = true;
             tempi.visible = true;
             let larga = 0;
             let riempita = 0;
-            if (tracciata) {
-                const fraz = Math.max(0, Math.min(1, posizione / lunghezza));
-                /* On the very first tick the line has not been allocated yet,
-                 * so there is no length to fill: the panel measures itself
-                 * again right after it is on screen. */
-                try {
-                    larga = Number(corsa.get_transformed_size()[0]) || Number(corsa.width) || 0;
-                } catch (e) {}
-                riempita = Math.round(larga * fraz);
-                riempi.set_style(`width: ${px(riempita)}px;`);
-                passato.text = durata(posizione);
-                resto.text = `-${durata(lunghezza - posizione)}`;
-            } else {
-                riempi.set_style('width: 0px;');
-                passato.text = '0:00';
-                resto.text = '--:--';
-            }
-            /* One line in the journal about the progress line: how long it is,
-             * how much of it is filled and how far the track is. It is logged
-             * only when something changes, so the journal does not fill up
-             * once a second. */
-            const riga = `pannello musica: barra larga ${Math.round(larga)}px, riempita ${riempita}px` +
-                ` (posizione ${Math.round(posizione / 1e6)}s su ${Math.round(lunghezza / 1e6)}s, tempi "${passato.text}" "${resto.text}")`;
-            if (riga !== ultimoLog) {
-                ultimoLog = riga;
-                log(riga);
+            /* While the pointer is on the line the preview is the truth: the
+             * poll must not pull the dot back under the finger. */
+            if (!trascinandoBarra) {
+                if (tracciata) {
+                    const fraz = Math.max(0, Math.min(1, posizione / lunghezza));
+                    /* On the very first tick the line has not been allocated
+                     * yet, so there is no length to fill: the panel measures
+                     * itself again right after it is on screen. */
+                    larga = largaBarra();
+                    /* At least the width of the knob's half: the dot sits on
+                     * the edge of the played part and must not stick out of
+                     * the track at 0:00. */
+                    riempita = Math.max(6, Math.round(larga * fraz));
+                    paint(riempi, 'rgba(255, 255, 255, 0.98)', `width: ${px(riempita)}px;`);
+                    try {
+                        pallino.visible = true;
+                    } catch (e) {}
+                    passato.text = durata(posizione);
+                    resto.text = `-${durata(lunghezza - posizione)}`;
+                } else {
+                    paint(riempi, 'rgba(255, 255, 255, 0.98)', 'width: 0px;');
+                    try {
+                        pallino.visible = false;
+                    } catch (e) {}
+                    passato.text = '0:00';
+                    resto.text = '--:--';
+                }
+                /* One line in the journal about the progress line: how long
+                 * it is, how much of it is filled and how far the track is.
+                 * It is logged only when something changes, so the journal
+                 * does not fill up once a second. */
+                const riga = `pannello musica: barra larga ${Math.round(larga)}px, riempita ${riempita}px` +
+                    ` (posizione ${Math.round(posizione / 1e6)}s su ${Math.round(lunghezza / 1e6)}s, tempi "${passato.text}" "${resto.text}")`;
+                if (riga !== ultimoLog) {
+                    ultimoLog = riga;
+                    log(riga);
+                }
             }
 
             const url = m.artUrl || '';
@@ -935,6 +1321,7 @@ export function crea(nc, h) {
                 try {
                     copertina.set_child(null);
                     copertina.set_style(`${h.lgOverride || ''} background-image: url("file://${path}"); background-size: cover;`);
+                    log(`copertina: ${path}`);
                 } catch (e) {}
                 /* The new cover fades in on top of the old one. */
                 if (anim.enabled !== false) {

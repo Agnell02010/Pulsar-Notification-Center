@@ -326,16 +326,60 @@ function later(ms, fn) {
     });
 }
 
+/* Pick the player that is actually doing something.
+ *
+ * More than one MPRIS name is often on the bus (a browser, a stopped player,
+ * a tray icon): taking the first one in ListNames order made the widget show an
+ * empty card while another player was playing. Each candidate is asked for its
+ * status and metadata, and the one that is playing wins, then the paused ones,
+ * then the ones that at least have a track. */
 function findPlayer(cb) {
     try {
         Gio.DBus.session.call('org.freedesktop.DBus', '/org/freedesktop/DBus',
             'org.freedesktop.DBus', 'ListNames', null, GLib.VariantType.new('(as)'),
             NONE, -1, null, (c, r) => {
+                let names = [];
                 try {
-                    const names = c.call_finish(r).deepUnpack()[0];
-                    cb(names.find(n => n.startsWith(MPRIS_PREFIX)) ?? null);
+                    names = c.call_finish(r).deepUnpack()[0]
+                        .filter(n => n.startsWith(MPRIS_PREFIX));
                 } catch (e) {
                     cb(null);
+                    return;
+                }
+                if (!names.length) {
+                    cb(null);
+                    return;
+                }
+                let migliore = null;
+                let migliorPunteggio = -1;
+                let rimasti = names.length;
+                for (const nome of names) {
+                    Gio.DBus.session.call(nome, MPRIS_PATH,
+                        'org.freedesktop.DBus.Properties', 'GetAll',
+                        GLib.Variant.new('(s)', [PLAYER_IFACE]),
+                        GLib.VariantType.new('(a{sv})'), NONE, -1, null, (cc, rr) => {
+                            let punteggio = -1;
+                            try {
+                                const props = cc.call_finish(rr).deepUnpack()[0];
+                                const stato = props['PlaybackStatus']?.deepUnpack();
+                                const meta = props['Metadata']?.deepUnpack() ?? {};
+                                const titolo = meta['xesam:title']?.deepUnpack();
+                                punteggio = 0;
+                                if (stato === 'Playing')
+                                    punteggio += 4;
+                                else if (stato === 'Paused')
+                                    punteggio += 2;
+                                if (titolo)
+                                    punteggio += 1;
+                            } catch (e) {}
+                            if (punteggio > migliorPunteggio) {
+                                migliorPunteggio = punteggio;
+                                migliore = nome;
+                            }
+                            rimasti -= 1;
+                            if (rimasti === 0)
+                                cb(migliore);
+                        });
                 }
             });
     } catch (e) {
@@ -369,6 +413,7 @@ class MacOSNotificationCenter {
         this._weatherData = null;
         this._mprisPlayer = null;
         this._mprisPlaying = false;
+        this._mprisSeekTime = 0;
         this._notifsExpanded = false;
         this._calendarEvents = [];
         this._calendarProxy = null;
@@ -807,12 +852,24 @@ class MacOSNotificationCenter {
                 play: () => this._mprisCmd('PlayPause', true),
                 next: () => this._mprisCmd('Next', false),
                 prev: () => this._mprisCmd('Previous', false),
-                shuffle: () => this._mprisShuffle(!this._mprisShuffle),
+                shuffle: () => this._impostaShuffle(!this._mprisShuffle),
                 repeat: () => this._mprisRepeat(),
+                /* The bar of the big player: a fraction of the track. */
+                seek: f => this._seekTo(f),
+                positionNow: () => this._posizioneOra(),
+                /* The "..." of the phone brings the player to the front. */
+                raise: () => this._mprisRaise(),
             },
             /* The album art as a local path: a remote cover is downloaded and
              * cached, because St cannot load an http image by itself. */
             art: (url, cb) => this._artPath(url, cb),
+            /* System volume through PipeWire (wpctl): the music panel's
+             * slider is the same one the Quick Settings use. */
+            volume: {
+                get: cb => this._getVolume(cb),
+                set: v => this._setVolume(v),
+                toggleMute: () => this._toggleMute(),
+            },
             lgOverride: LG_OVERRIDE,
             log: msg => debug(msg),
         };
@@ -844,7 +901,7 @@ class MacOSNotificationCenter {
      * A pod that is itself a button (the calendar) already has a gesture of its
      * own, and two gestures on the same actor cancel each other: there the
      * button's own `clicked` signal is used instead. */
-    _pannello(card, chiave, bersaglio) {
+    _pannello(card, chiave, bersaglio, escludi) {
         if (!card)
             return;
         try {
@@ -874,16 +931,33 @@ class MacOSNotificationCenter {
                 });
                 return;
             }
-            const gesto = new Clutter.ClickGesture();
             /* One gesture per target: the same gesture on an actor and on its
              * ancestor would fire twice for one click, and the panel would
              * open and close right away. */
             const bersagli = Array.isArray(bersaglio) ? bersaglio.filter(x => x) : [bersaglio || card];
+            const esclusi = Array.isArray(escludi) ? escludi.filter(x => x) : (escludi ? [escludi] : []);
             for (const b of bersagli) {
                 const g = new Clutter.ClickGesture();
-                g.connect('recognize', () => {
+                g.connect('recognize', (gesto) => {
                     if (!this._pan)
                         return true;
+                    /* If the click landed on (or inside) an excluded actor, let it
+                     * pass through to the control's own handler. */
+                    try {
+                        const [x, y] = gesto.get_coords ? gesto.get_coords() : [null, null];
+                        if (x !== null && y !== null) {
+                            for (const ex of esclusi) {
+                                try {
+                                    if (!ex || !ex.get_transformed_position)
+                                        continue;
+                                    const [exX, exY] = ex.get_transformed_position();
+                                    const [exW, exH] = ex.get_transformed_size();
+                                    if (x >= exX && x <= exX + exW && y >= exY && y <= exY + exH)
+                                        return true;
+                                } catch (e) {}
+                            }
+                        }
+                    } catch (e) {}
                     try {
                         this._pan.apri(chiave, card, g);
                     } catch (e) {
@@ -1037,8 +1111,10 @@ class MacOSNotificationCenter {
         row4.add_child(this._batteryCard);
         widgetsBox.add_child(row4);
         /* The music pod opens from its header and from the block with the
-         * cover and the name: the transport has its own clicks and a gesture
-         * on the whole card would swallow them. */
+         * cover and the name: the transport has its own clicks and does not
+         * interfere. One gesture per target only: the artwork lives inside
+         * that block, and a second gesture on it would fire twice for one
+         * click and close the panel right after opening it. */
         this._pannello(this._musicCard, 'music', [this._musicHeader, this._musicArea]);
         this._pannello(this._batteryCard, 'battery');
 
@@ -1335,6 +1411,10 @@ class MacOSNotificationCenter {
                 if (isToday) {
                     const bubble = new St.Bin({
                         style_class: 'mac-nc-cal-today-bubble',
+                        /* Liquid Glass erases the background of everything
+                         * inside a pod: the marker makes it skip this one,
+                         * and the colour after it is the one that sticks. */
+                        style: `${LG_OVERRIDE} background-color: #ff453a !important;`,
                         x_align: Clutter.ActorAlign.CENTER,
                         y_align: Clutter.ActorAlign.CENTER,
                     });
@@ -1402,7 +1482,12 @@ class MacOSNotificationCenter {
             orientation: Clutter.Orientation.HORIZONTAL,
             style_class: 'mac-nc-card-header',
         });
-        header.add_child(icon('object-select-symbolic', 'mac-nc-reminders-icon-bg', 12));
+        const reminderIcon = icon('object-select-symbolic', 'mac-nc-reminders-icon-bg', 12);
+        try {
+            /* Same as the calendar bubble: the glass would erase the orange. */
+            reminderIcon.set_style(`${LG_OVERRIDE} background-color: #ff9f0a !important;`);
+        } catch (e) {}
+        header.add_child(reminderIcon);
         header.add_child(new St.Label({
             text: t('TASKS'),
             style_class: 'mac-nc-card-title',
@@ -1665,13 +1750,13 @@ class MacOSNotificationCenter {
             orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
         });
-        this._weatherCity = new St.Label({text: 'A Coruña', style_class: 'mac-nc-weather-city'});
-        this._weatherCond = new St.Label({text: `${t('CLEAR_SKY')} • ${t('UPDATED')}`, style_class: 'mac-nc-weather-condition'});
+        this._weatherCity = new St.Label({text: '', style_class: 'mac-nc-weather-city'});
+        this._weatherCond = new St.Label({text: '—', style_class: 'mac-nc-weather-condition'});
         cityBox.add_child(this._weatherCity);
         cityBox.add_child(this._weatherCond);
         topRow.add_child(cityBox);
 
-        this._weatherTemp = new St.Label({text: '19°', style_class: 'mac-nc-weather-temp'});
+        this._weatherTemp = new St.Label({text: '--°', style_class: 'mac-nc-weather-temp'});
         topRow.add_child(this._weatherTemp);
 
         this._weatherIcon = icon('weather-clear-symbolic', 'mac-nc-weather-big-icon', 28);
@@ -1687,58 +1772,151 @@ class MacOSNotificationCenter {
         return card;
     }
 
-    _getConfiguredLocation() {
-        let name = 'A Coruña';
-        let lat = 43.36;
-        let lon = -8.41;
+    /* The city of the weather card, in order of authority:
+     *  1. the location configured in the shell/Weather (the same one the
+     *     calendar popover uses), when the user has set one;
+     *  2. the last position resolved from the network, cached on disk;
+     *  3. a fresh IP lookup, cached for a day.
+     * The old hardcoded "A Coruña" was the mockup's city: it is kept only as
+     * the last resort when there is no network at all. */
+    _locationCachePath() {
+        const dir = GLib.build_filenamev([GLib.get_user_config_dir(), 'pulsar-cc']);
+        GLib.mkdir_with_parents(dir, 0o755);
+        return GLib.build_filenamev([dir, 'posizione.json']);
+    }
 
+    _readLocationCache() {
         try {
-            const settings = new Gio.Settings({schema_id: 'org.gnome.Weather'});
-            const locs = settings.get_value('locations').deepUnpack();
-            if (locs && locs.length > 0) {
-                const locTuple = locs[0];
-                const inner = locTuple[1];
-                if (inner && inner[0]) {
-                    name = inner[0];
-                    const coords = inner[3];
-                    if (coords && coords.length > 0) {
-                        lat = (coords[0][0] * 180 / Math.PI);
-                        lon = (coords[0][1] * 180 / Math.PI);
-                    }
-                }
-            }
+            const path = this._locationCachePath();
+            if (!GLib.file_test(path, GLib.FileTest.EXISTS))
+                return null;
+            const [ok, contents] = GLib.file_get_contents(path);
+            if (!ok)
+                return null;
+            const data = JSON.parse(new TextDecoder().decode(contents));
+            const lat = Number(data.lat);
+            const lon = Number(data.lon);
+            if (!Number.isFinite(lat) || !Number.isFinite(lon))
+                return null;
+            return {
+                name: String(data.name || ''),
+                lat,
+                lon,
+                ts: Number(data.ts) || 0,
+                fixed: data.fixed === true,
+            };
         } catch (e) {
+            return null;
+        }
+    }
+
+    _writeLocationCache(loc) {
+        try {
+            GLib.file_set_contents(this._locationCachePath(), JSON.stringify({
+                name: loc.name,
+                lat: loc.lat,
+                lon: loc.lon,
+                ts: Math.floor(Date.now() / 1000),
+            }));
+        } catch (e) {}
+    }
+
+    _getConfiguredLocation() {
+        /* Both schemas have stored the same tuple over the years: the first
+         * element of the variant is the city name, the fourth holds the
+         * coordinates in radians. A schema that is not installed simply
+         * throws and the next one is tried. */
+        for (const schema of ['org.gnome.shell.weather', 'org.gnome.Weather']) {
             try {
-                const s2 = new Gio.Settings({schema_id: 'org.gnome.shell.weather'});
-                const locs = s2.get_value('locations').deepUnpack();
-                if (locs && locs.length > 0) {
-                    const inner = locs[0][1];
-                    if (inner && inner[0]) {
-                        name = inner[0];
-                        const coords = inner[3];
-                        if (coords && coords.length > 0) {
-                            lat = (coords[0][0] * 180 / Math.PI);
-                            lon = (coords[0][1] * 180 / Math.PI);
-                        }
+                const settings = new Gio.Settings({schema_id: schema});
+                const locs = settings.get_value('locations').deepUnpack();
+                if (!locs || locs.length === 0)
+                    continue;
+                const inner = locs[0][1];
+                if (!inner || !inner[0])
+                    continue;
+                let lat = 43.36;
+                let lon = -8.41;
+                const coords = inner[3];
+                if (coords && coords.length > 0) {
+                    lat = coords[0][0] * 180 / Math.PI;
+                    lon = coords[0][1] * 180 / Math.PI;
+                }
+                return {name: String(inner[0]), lat, lon};
+            } catch (e) {}
+        }
+        return null;
+    }
+
+    _lookupLocationByIp(stale) {
+        if (!this._soupSession)
+            return;
+        const session = this._soupSession;
+        const msg = Soup.Message.new('GET', 'https://ipwho.is/');
+        session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (_s, res) => {
+            let loc = null;
+            try {
+                const bytes = session.send_and_read_finish(res);
+                if (bytes && msg.get_status() === Soup.Status.OK) {
+                    const data = JSON.parse(new TextDecoder().decode(bytes.get_data()));
+                    const lat = Number(data?.latitude);
+                    const lon = Number(data?.longitude);
+                    if (data && data.success !== false &&
+                        Number.isFinite(lat) && Number.isFinite(lon)) {
+                        loc = {
+                            name: String(data.city || data.region || ''),
+                            lat,
+                            lon,
+                        };
                     }
                 }
-            } catch (e2) {}
-        }
-        return {name, lat: lat.toFixed(2), lon: lon.toFixed(2)};
+            } catch (e) {}
+            if (!loc && stale)
+                loc = {name: stale.name, lat: stale.lat, lon: stale.lon};
+            if (!loc) {
+                log('weather: the IP lookup failed, falling back to the mockup city');
+                loc = {name: 'A Coruña', lat: 43.36, lon: -8.41};
+            }
+            if (loc.name && loc !== stale) {
+                log(`weather: city from the IP geolocation: ${loc.name} (${loc.lat}, ${loc.lon})`);
+                this._writeLocationCache(loc);
+            }
+            this._requestWeather(loc);
+        });
     }
 
     _fetchWeather() {
         if (!this._soupSession) return;
-        const loc = this._getConfiguredLocation();
+
+        const configured = this._getConfiguredLocation();
+        if (configured) {
+            log(`weather: city from the desktop settings: ${configured.name}`);
+            this._requestWeather(configured);
+            return;
+        }
+
+        const cached = this._readLocationCache();
+        const now = Math.floor(Date.now() / 1000);
+        if (cached && (cached.fixed || now - cached.ts < 24 * 3600)) {
+            log(`weather: city from the cache: ${cached.name}`);
+            this._requestWeather(cached);
+            return;
+        }
+        this._lookupLocationByIp(cached);
+    }
+
+    _requestWeather(loc) {
+        if (!this._soupSession) return;
+        const session = this._soupSession;
         /* `daily` + 10 days feeds the weather widget's detail panel (the card
          * itself only shows the next few hours). One request, one payload: the
          * hourly part is still there for the card's strip. */
         const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,weather_code&hourly=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=10&timezone=auto`;
 
         const msg = Soup.Message.new('GET', url);
-        this._soupSession.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (_s, res) => {
+        session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (_s, res) => {
             try {
-                const bytes = this._soupSession.send_and_read_finish(res);
+                const bytes = session.send_and_read_finish(res);
                 if (msg.get_status() === 200 && bytes) {
                     const data = JSON.parse(new TextDecoder().decode(bytes.get_data()));
                     data.cityName = loc.name;
@@ -1764,7 +1942,7 @@ class MacOSNotificationCenter {
         if (!this._isAlive()) return;
         if (!this._weatherData || !this._weatherCity) return;
         const current = this._weatherData.current;
-        const cityName = this._weatherData.cityName || 'A Coruña';
+        const cityName = this._weatherData.cityName || '—';
         const code = current.weather_code ?? 0;
         const info = this._getWeatherIconAndName(code);
 
@@ -1845,7 +2023,9 @@ class MacOSNotificationCenter {
         this._musicArt = new St.Widget({
             style_class: 'mac-nc-music-art',
             style: LG_OVERRIDE,
-            reactive: true,
+            /* Not reactive: the click has to reach the block that carries the
+             * open-panel gesture, not stop on the picture. */
+            reactive: false,
             x_align: Clutter.ActorAlign.CENTER,
             y_align: Clutter.ActorAlign.START,
         });
@@ -1915,6 +2095,7 @@ class MacOSNotificationCenter {
         comandi.add_child(this._musicNext);
         comandi.add_child(spazio());
         card.add_child(comandi);
+        this._musicControls = comandi;
 
         return card;
     }
@@ -1962,6 +2143,51 @@ class MacOSNotificationCenter {
         } catch (e) {
             cb(null);
         }
+    }
+
+    /* System volume, read and written through wpctl (PipeWire).
+     *
+     * The read is asynchronous: a synchronous spawn would block the shell's
+     * main loop, and the drawer has to stay smooth. The two writes are cheap
+     * and fire-and-forget, so they are spawned directly (wpctl exits at once).
+     * Every call is guarded: on a system without wpctl the slider simply does
+     * nothing instead of logging an error every tick. */
+    _getVolume(cb) {
+        let proc = null;
+        try {
+            proc = Gio.Subprocess.new(
+                ['wpctl', 'get-volume', '@DEFAULT_AUDIO_SINK@'],
+                Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENCE);
+        } catch (e) {
+            cb(0, false);
+            return;
+        }
+        proc.communicate_utf8_async(null, null, (p, res) => {
+            try {
+                const [, out] = p.communicate_utf8_finish(res);
+                const m = /Volume:\s*([0-9.]+)/i.exec(out || '');
+                const v = m ? Math.max(0, Math.min(1, parseFloat(m[1]))) : 0;
+                cb(v, /\[MUTED\]/i.test(out || ''));
+            } catch (e) {
+                cb(0, false);
+            }
+        });
+    }
+
+    _setVolume(v) {
+        try {
+            Gio.Subprocess.new(
+                ['wpctl', 'set-volume', '@DEFAULT_AUDIO_SINK@', String(v)],
+                Gio.SubprocessFlags.NONE);
+        } catch (e) {}
+    }
+
+    _toggleMute() {
+        try {
+            Gio.Subprocess.new(
+                ['wpctl', 'set-mute', '@DEFAULT_AUDIO_SINK@', 'toggle'],
+                Gio.SubprocessFlags.NONE);
+        } catch (e) {}
     }
 
     /* Paint the artwork of the closed pod. */
@@ -2018,7 +2244,11 @@ class MacOSNotificationCenter {
                         const artUrl = meta['mpris:artUrl']?.deepUnpack() ?? '';
                         const length = Number(meta['mpris:length']?.deepUnpack() ?? 0);
                         const position = Number(props['Position']?.deepUnpack() ?? 0);
-                        /* The shuffle and the repeat of the phone's player. */
+                        /* The shuffle and the repeat of the phone's player. A
+                         * player that does not expose them at all must not
+                         * reset the choice we just made from the panel. */
+                        const hasShuffle = props['Shuffle'] !== undefined;
+                        const hasLoop = props['LoopStatus'] !== undefined;
                         const shuffle = !!props['Shuffle']?.deepUnpack();
                         const loop = String(props['LoopStatus']?.deepUnpack() ?? 'None');
 
@@ -2032,10 +2262,19 @@ class MacOSNotificationCenter {
                         this._mprisArtist = artist;
                         this._mprisArtUrl = artUrl;
                         this._mprisLength = Number.isFinite(length) ? length : 0;
-                        this._mprisPosition = Number.isFinite(position) ? position : 0;
-                        this._mprisPosTime = GLib.get_monotonic_time();
-                        this._mprisShuffle = shuffle;
-                        this._mprisLoop = loop;
+                        /* Just after a seek the player can still answer with
+                         * the old position for a moment: keeping our own value
+                         * stops the bar from jumping back under the finger. */
+                        const dopoSeek = this._mprisSeekTime &&
+                            (GLib.get_monotonic_time() - this._mprisSeekTime) < 700000;
+                        if (!dopoSeek) {
+                            this._mprisPosition = Number.isFinite(position) ? position : 0;
+                            this._mprisPosTime = GLib.get_monotonic_time();
+                        }
+                        if (hasShuffle)
+                            this._mprisShuffle = shuffle;
+                        if (hasLoop)
+                            this._mprisLoop = loop;
                         if (this._musicTitle) this._musicTitle.text = title;
                         if (this._musicArtist) this._musicArtist.text = artist;
                         if (this._playIcon) {
@@ -2068,19 +2307,125 @@ class MacOSNotificationCenter {
     }
 
     /* Write an MPRIS property. The shuffle and the repeat are properties, not
-     * methods: the phone's player switches them with two taps and so does
-     * this one. */
+     * methods: they live on org.freedesktop.DBus.Properties.Set, with the
+     * interface name in the message itself (ssv). Sending Set to the Player
+     * interface — as this did before — made the bus answer UnknownMethod and
+     * the buttons looked dead on every player. */
     _mprisSetProp(nome, valore) {
         if (!this._mprisPlayer)
             return;
+        debug(`MPRIS Set ${nome} on ${this._mprisPlayer}`);
+        try {
+            Gio.DBus.session.call(this._mprisPlayer, MPRIS_PATH,
+                'org.freedesktop.DBus.Properties', 'Set',
+                GLib.Variant.new('(ssv)', [PLAYER_IFACE, nome, valore]),
+                null, NONE, -1, null, (c, r) => {
+                    try {
+                        c.call_finish(r);
+                    } catch (e) {
+                        debug(`MPRIS Set ${nome} failed: ${e.message}`);
+                    }
+                    this._refreshMedia();
+                });
+        } catch (e) {
+            debug(`MPRIS Set ${nome} could not be sent: ${e.message}`);
+        }
+    }
+
+    /* Where the track is right now, not where it was at the last poll: the
+     * poll is coarse and the line has to be at the right second. */
+    _posizioneOra() {
+        let posizione = Number(this._mprisPosition) || 0;
+        if (this._mprisPlaying && this._mprisPosTime) {
+            const trascorso = GLib.get_monotonic_time() - this._mprisPosTime;
+            if (trascorso > 0)
+                posizione += trascorso;
+        }
+        const lunghezza = Number(this._mprisLength) || 0;
+        if (lunghezza > 0)
+            posizione = Math.min(posizione, lunghezza);
+        return Math.max(0, posizione);
+    }
+
+    /* Jump to a fraction of the track (0..1). MPRIS only offers a relative
+     * Seek in microseconds, so the offset is computed from the position we
+     * know. The local position is moved at once: the next GetAll can still
+     * return the old value for a moment, and the bar would jump back. */
+    _seekTo(frazione) {
+        if (!this._mprisPlayer)
+            return;
+        const lunghezza = Number(this._mprisLength) || 0;
+        if (lunghezza <= 0)
+            return;
+        const f = Math.max(0, Math.min(1, Number(frazione) || 0));
+        const destinazione = Math.round(lunghezza * f);
+        const delta = destinazione - Math.round(this._posizioneOra());
+        debug(`seek -> ${Math.round(destinazione / 1e6)}s (${delta >= 0 ? '+' : ''}${Math.round(delta / 1e6)}s)`);
         try {
             Gio.DBus.session.call(this._mprisPlayer, MPRIS_PATH, PLAYER_IFACE,
-                'Set', GLib.Variant.new('(sv)', [nome, valore]), null, null,
-                NONE, -1, null, () => this._refreshMedia());
+                'Seek', GLib.Variant.new('(x)', [delta]), null,
+                NONE, -1, null, (c, r) => {
+                    try {
+                        c.call_finish(r);
+                    } catch (e) {
+                        debug(`seek failed: ${e.message}`);
+                    }
+                    this._mprisPosition = destinazione;
+                    this._mprisPosTime = GLib.get_monotonic_time();
+                    this._mprisSeekTime = this._mprisPosTime;
+                    this._refreshMedia();
+                });
         } catch (e) {}
     }
 
-    _mprisShuffle(v) {
+    /* Bring the player to the front. MPRIS has Raise() for exactly this, and
+     * Sidra answers with CanRaise=true. If the call is refused (or no player
+     * is on the bus) the player's desktop entry is started instead: Sidra is
+     * called "sidra.desktop" (its MPRIS DesktopEntry), so it is the real app
+     * that opens, not a look-alike. */
+    _mprisRaise() {
+        if (!this._mprisPlayer) {
+            this._launchPlayer();
+            return;
+        }
+        try {
+            Gio.DBus.session.call(this._mprisPlayer, MPRIS_PATH,
+                'org.mpris.MediaPlayer2', 'Raise', null, null,
+                NONE, -1, null, (c, r) => {
+                    try {
+                        c.call_finish(r);
+                        debug(`raise ok: ${this._mprisPlayer}`);
+                    } catch (e) {
+                        debug(`raise failed: ${e.message}`);
+                        this._launchPlayer();
+                    }
+                });
+        } catch (e) {
+            this._launchPlayer();
+        }
+    }
+
+    _launchPlayer() {
+        for (const id of ['sidra.desktop', 'com.apple.android.music.desktop']) {
+            try {
+                const app = Gio.DesktopAppInfo.new(id);
+                if (app) {
+                    app.launch([], null);
+                    return;
+                }
+            } catch (e) {}
+        }
+        launch(['sidra', 'gnome-music', 'spotify', 'rhythmbox', 'amberol', 'elisa']);
+    }
+
+    /* The new state is written here *before* the call on purpose: many players
+     * expose Shuffle and LoopStatus but ignore the write, and without a local
+     * state the button would look dead (and the next click would send the same
+     * value again). _refreshMedia() only overwrites these when the player
+     * actually reports the property. */
+    _impostaShuffle(v) {
+        this._mprisShuffle = !!v;
+        debug(`shuffle -> ${this._mprisShuffle ? 'on' : 'off'} (player ${this._mprisPlayer || 'none'})`);
         this._mprisSetProp('Shuffle', new GLib.Variant('b', !!v));
     }
 
@@ -2089,6 +2434,8 @@ class MacOSNotificationCenter {
         const ordine = ['None', 'Playlist', 'Track'];
         const i = ordine.indexOf(this._mprisLoop || 'None');
         const prossimo = ordine[(i + 1) % ordine.length];
+        this._mprisLoop = prossimo;
+        debug(`loop -> ${prossimo} (player ${this._mprisPlayer || 'none'})`);
         this._mprisSetProp('LoopStatus', new GLib.Variant('s', prossimo));
     }
 

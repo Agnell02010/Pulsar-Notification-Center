@@ -1,1 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="#bebebe" fill-rule="nonzero" d="M 4.13 12.46 Q 3.6 12 4.13 11.54 L 10.87 5.66 Q 11.4 5.2 11.4 5.9 L 11.4 18.1 Q 11.4 18.8 10.87 18.34 Z"/><path fill="#bebebe" fill-rule="nonzero" d="M 11.93 12.46 Q 11.4 12 11.93 11.54 L 18.67 5.66 Q 19.2 5.2 19.2 5.9 L 19.2 18.1 Q 19.2 18.8 18.67 18.34 Z"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <g fill="#bebebe" stroke="#bebebe" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M 11.4,5.4 L 4.9,12 L 11.4,18.6 Z"/>
+    <path d="M 19.6,5.4 L 13.1,12 L 19.6,18.6 Z"/>
+  </g>
+</svg>
