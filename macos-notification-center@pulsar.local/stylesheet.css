@@ -37,12 +37,16 @@
 
 .mac-nc-content {
     spacing: 12px;
-    width: 350px;
+    width: 370px;
 }
 
 .mac-nc-section {
     spacing: 8px;
-    width: 350px;
+    width: 370px;
+}
+
+.mac-nc-notif-list {
+    spacing: 4px;
 }
 
 .mac-nc-section-header,
@@ -160,16 +164,19 @@
  * bright wallpaper — with a radius from the same scale as the cards.
  */
 .mac-nc-notif-card {
-    padding: 10px 12px;
+    padding: 8px 12px;
     border-radius: 22px;
-    background-color: rgba(30, 30, 40, 0.66) !important;
-    border: 1px solid rgba(255, 255, 255, 0.14) !important;
-    width: 350px;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    width: 370px;
+    max-width: 370px;
 }
 
 .mac-nc-notif-card:hover {
-    background-color: rgba(44, 47, 62, 0.74) !important;
-    border-color: rgba(255, 255, 255, 0.20) !important;
+    background-color: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
 }
 
 .mac-nc-notif-top {
@@ -232,12 +239,20 @@
 }
 
 .mac-nc-empty-card {
-    padding: 14px 16px;
+    padding: 9px 16px;
     spacing: 10px;
     border-radius: 22px;
-    background-color: rgba(30, 30, 40, 0.66) !important;
-    border: 1px solid rgba(255, 255, 255, 0.14) !important;
-    width: 350px;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    width: 370px;
+    max-width: 370px;
+    min-height: 48px;
+}
+
+.mac-nc-empty-card:hover {
+    background-color: transparent !important;
+    box-shadow: none !important;
 }
 
 .mac-nc-empty-icon {
@@ -256,13 +271,16 @@
 
 .mac-nc-more-notifs-btn {
     padding: 8px 12px;
-    border-radius: 18px;
-    background-color: rgba(255, 255, 255, 0.10);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    width: 350px;
+    border-radius: 22px;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    width: 370px;
+    max-width: 370px;
 }
 .mac-nc-more-notifs-btn:hover {
-    background-color: rgba(255, 255, 255, 0.18);
+    background-color: transparent !important;
+    box-shadow: none !important;
 }
 .mac-nc-more-label {
     font-size: 11px;

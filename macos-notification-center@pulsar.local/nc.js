@@ -406,6 +406,8 @@ class MacOSNotificationCenter {
         this._subs = [];
         this._hiddenChildren = [];
         this._cards = [];
+        this._notifTrayConns = [];
+        this._notifSrcConns = [];
         this._pollId = 0;
         this._weatherPollId = 0;
         this._soupSession = new Soup.Session();
@@ -461,7 +463,7 @@ class MacOSNotificationCenter {
 
         try {
             if (this._dateMenu?.menu?._boxPointer) {
-                this._dateMenu.menu._boxPointer.setSourceAlignment(0.85);
+                this._dateMenu.menu._boxPointer.setSourceAlignment(0.92);
             }
         } catch (e) {}
 
@@ -469,6 +471,26 @@ class MacOSNotificationCenter {
             this._ids.push([this._dateMenu.menu, this._dateMenu.menu.connect('open-state-changed', (_m, open) => {
                 if (open) {
                     this._applyTransparentContainer(true);
+                    try {
+                        const menu = this._dateMenu.menu;
+                        const actors = [menu._boxPointer?.bin, menu._boxPointer, menu.box, menu.actor].filter(Boolean);
+                        for (const actor of actors) {
+                            try { actor.remove_all_transitions(); } catch (e) {}
+                            try { actor.set_translation(80, 0); } catch (e) {}
+                            try { actor.set_scale(0.98, 0.98); } catch (e) {}
+                            try { actor.opacity = 0; } catch (e) {}
+                            try {
+                                actor.ease({
+                                    translation_x: 0,
+                                    scale_x: 1,
+                                    scale_y: 1,
+                                    opacity: 255,
+                                    duration: 420,
+                                    mode: Clutter.AnimationMode.EASE_OUT_QUINT,
+                                });
+                            } catch (e) {}
+                        }
+                    } catch (e) {}
                     this._queryTodayEvents();
                     this._refresh();
                     this._updateLiquidGlass();
@@ -480,6 +502,26 @@ class MacOSNotificationCenter {
                      * would be rebuilt on the next open with stale data. */
                     try {
                         this._pan?.azzera();
+                    } catch (e) {}
+                    try {
+                        const menu = this._dateMenu.menu;
+                        const actors = [menu._boxPointer?.bin, menu._boxPointer, menu.box, menu.actor].filter(Boolean);
+                        for (const actor of actors) {
+                            try { actor.remove_all_transitions(); } catch (e) {}
+                            try {
+                                actor.ease({
+                                    translation_x: 60,
+                                    opacity: 0,
+                                    scale_x: 0.98,
+                                    scale_y: 0.98,
+                                    duration: 320,
+                                    mode: Clutter.AnimationMode.EASE_IN_CUBIC,
+                                    onComplete: () => {
+                                        try { actor.set_translation(0, 0); actor.set_scale(1, 1); actor.opacity = 255; } catch (e) {}
+                                    },
+                                });
+                            } catch (e) {}
+                        }
                     } catch (e) {}
                 }
             })]);
@@ -542,6 +584,30 @@ class MacOSNotificationCenter {
         }
         this._ids = [];
 
+        if (this._notifTrayConns) {
+            const mt = Main.messageTray;
+            for (const id of this._notifTrayConns) {
+                try {
+                    if (mt) mt.disconnect(id);
+                } catch (e) {}
+            }
+            this._notifTrayConns = [];
+        }
+        this._notifTrayBound = false;
+
+        for (const [src, c1, c2] of this._notifSrcConns ?? []) {
+            try {
+                if (src && c1) src.disconnect(c1);
+            } catch (e) {}
+            try {
+                if (src && c2) src.disconnect(c2);
+            } catch (e) {}
+            try {
+                if (src) src._macNcWatched = false;
+            } catch (e) {}
+        }
+        this._notifSrcConns = [];
+
         this._applyTransparentContainer(false);
 
         if (this._root) {
@@ -583,6 +649,37 @@ class MacOSNotificationCenter {
         }
     }
 
+    _watchNotifSource(source) {
+        if (!source || source._macNcWatched) return;
+        try {
+            source._macNcWatched = true;
+            const c1 = source.connect('notification-added', () => this._refreshNotifications());
+            const c2 = source.connect('notification-removed', () => this._refreshNotifications());
+            if (!this._notifSrcConns) this._notifSrcConns = [];
+            this._notifSrcConns.push([source, c1, c2]);
+        } catch (e) {}
+    }
+
+    _bindNotifTray() {
+        if (this._notifTrayBound) return;
+        try {
+            const mt = Main.messageTray;
+            if (!mt) return;
+            this._notifTrayBound = true;
+            if (!this._notifTrayConns) this._notifTrayConns = [];
+            if (mt.connect) {
+                this._notifTrayConns.push(mt.connect('source-added', (_m, src) => {
+                    this._watchNotifSource(src);
+                    this._refreshNotifications();
+                }));
+                this._notifTrayConns.push(mt.connect('source-removed', () => this._refreshNotifications()));
+            }
+            const srcs = mt.getSources ? mt.getSources() : [];
+            for (let i = 0; i < srcs.length; i++)
+                this._watchNotifSource(srcs[i]);
+        } catch (e) {}
+    }
+
     _updateLiquidGlass() {
         let lg = null;
         try {
@@ -592,11 +689,29 @@ class MacOSNotificationCenter {
 
         for (const card of this._cards ?? []) {
             if (!card) continue;
-            if (active)
-                card.add_style_class_name('quick-toggle');
-            else
-                card.remove_style_class_name('quick-toggle');
+            try {
+                if (active)
+                    card.add_style_class_name('quick-toggle');
+                else
+                    card.remove_style_class_name('quick-toggle');
+            } catch (e) {}
         }
+        try {
+            if (this._notifList) {
+                for (const child of this._notifList.get_children()) {
+                    if (!child) continue;
+                    if (child.has_style_class_name('mac-nc-notif-card') ||
+                        child.has_style_class_name('mac-nc-empty-card') ||
+                        child.has_style_class_name('mac-nc-more-notifs-btn')) {
+                        if (active)
+                            child.add_style_class_name('quick-toggle');
+                        else
+                            child.remove_style_class_name('quick-toggle');
+                        try { child.set_style('background-color: transparent !important;'); } catch (e) {}
+                    }
+                }
+            }
+        } catch (e) {}
     }
 
     /* See DEBUG_FLAG at the top of the file. */
@@ -622,6 +737,7 @@ class MacOSNotificationCenter {
             const [w, h] = this._root ? this._root.get_transformed_size() : [0, 0];
             debug(`sidebar ${Math.round(w)}x${Math.round(h)} cards=${(this._cards ?? []).length}`);
         } catch (e) {}
+
         for (const card of this._cards ?? []) {
             try {
                 debug(`widget  ${card.get_style_class_name()}  ${info(card)}`);
@@ -777,12 +893,22 @@ class MacOSNotificationCenter {
 
     _refresh() {
         if (!this._isAlive()) return;
-        this._refreshCalendar();
-        this._refreshNotifications();
-        this._refreshWorldClocks();
-        this._refreshMedia();
-        this._refreshWeatherUI();
-        this._refreshBatteryAndSystem();
+        const t0 = GLib.get_monotonic_time();
+        const step = (name, fn) => {
+            const s = GLib.get_monotonic_time();
+            try {
+                fn();
+            } catch (e) {}
+            debug(`refresh ${name}: ${((GLib.get_monotonic_time() - s) / 1000).toFixed(2)}ms`);
+        };
+        step('calendar', () => this._refreshCalendar());
+        step('bind', () => this._bindNotifTray());
+        step('notifications', () => this._refreshNotifications());
+        step('clocks', () => this._refreshWorldClocks());
+        step('media', () => this._refreshMedia());
+        step('weather', () => this._refreshWeatherUI());
+        step('battery', () => this._refreshBatteryAndSystem());
+        debug(`refresh total: ${((GLib.get_monotonic_time() - t0) / 1000).toFixed(2)}ms`);
     }
 
     _startPolling() {
@@ -1045,7 +1171,7 @@ class MacOSNotificationCenter {
 
         this._notifList = new St.BoxLayout({
             orientation: Clutter.Orientation.VERTICAL,
-            style_class: 'mac-nc-section',
+            style_class: 'mac-nc-section mac-nc-notif-list',
             x_expand: true,
         });
         this._notifSection.add_child(this._notifList);
@@ -1132,22 +1258,39 @@ class MacOSNotificationCenter {
     /* 1. Notifications UI */
     _refreshNotifications() {
         if (!this._isAlive()) return;
+        if (this._suppressNotifRefresh) return;
         if (!this._notifList) return;
         this._notifList.destroy_all_children();
 
-        const notifModel = Main.panel.statusArea.dateMenu?._messageList?._notificationSection?._model
-            || Main.messageTray?._notificationQueue;
         let notifs = [];
 
         try {
-            if (notifModel?.get_n_items) {
-                const count = notifModel.get_n_items();
-                for (let i = 0; i < count; i++) {
-                    const item = notifModel.get_item(i);
-                    if (item) notifs.push(item);
+            // GNOME Shell 51 path
+            const sources = Main.messageTray?.getSources?.() || [];
+            for (let s = 0; s < sources.length; s++) {
+                const src = sources[s];
+                const ns = src.notifications || [];
+                for (let n = 0; n < ns.length; n++) {
+                    if (ns[n] && !ns[n].isTransient)
+                        notifs.push(ns[n]);
                 }
-            } else if (Main.panel.statusArea.dateMenu?._messageList?._notificationSection?._messages) {
-                notifs = Main.panel.statusArea.dateMenu._messageList._notificationSection._messages;
+            }
+        } catch (e) {}
+
+        // Fallbacks
+        try {
+            if (notifs.length === 0) {
+                const notifModel = Main.panel.statusArea.dateMenu?._messageList?._notificationSection?._model
+                    || Main.messageTray?._notificationQueue;
+                if (notifModel?.get_n_items) {
+                    const count = notifModel.get_n_items();
+                    for (let i = 0; i < count; i++) {
+                        const item = notifModel.get_item(i);
+                        if (item) notifs.push(item);
+                    }
+                } else if (Main.panel.statusArea.dateMenu?._messageList?._notificationSection?._messages) {
+                    notifs = Main.panel.statusArea.dateMenu._messageList._notificationSection._messages;
+                }
             }
         } catch (e) {}
 
@@ -1159,7 +1302,7 @@ class MacOSNotificationCenter {
             this._expandBtn.visible = false;
             const emptyCard = new St.BoxLayout({
                 orientation: Clutter.Orientation.HORIZONTAL,
-                style_class: 'mac-nc-card mac-nc-empty-card',
+                style_class: 'mac-nc-card mac-nc-empty-card quick-toggle',
                 x_expand: true,
                 x_align: Clutter.ActorAlign.CENTER,
             });
@@ -1184,7 +1327,7 @@ class MacOSNotificationCenter {
         if (!this._notifsExpanded && total > 3) {
             const remaining = total - 3;
             const moreBtn = new St.Button({
-                style_class: 'mac-nc-more-notifs-btn',
+                style_class: 'mac-nc-more-notifs-btn quick-toggle',
                 can_focus: true,
                 reactive: true,
                 x_expand: true,
@@ -1209,7 +1352,7 @@ class MacOSNotificationCenter {
 
     _buildNotificationCard(notification) {
         const card = new St.Button({
-            style_class: 'mac-nc-card mac-nc-notif-card',
+            style_class: 'mac-nc-card mac-nc-notif-card quick-toggle',
             can_focus: true,
             reactive: true,
             x_expand: true,
@@ -1298,11 +1441,28 @@ class MacOSNotificationCenter {
     }
 
     _clearAllNotifications() {
+        /* GNOME Shell 51 keeps the live notifications on the message tray
+         * sources; the old message-list model no longer exists. Destroying the
+         * notifications is what actually clears them, and the notification-
+         * removed handlers would rebuild the list once per notification, so
+         * they are muted until the sweep is over. */
+        this._suppressNotifRefresh = true;
+        try {
+            const sources = Main.messageTray?.getSources?.() || [];
+            for (const src of sources) {
+                for (const n of [...(src.notifications || [])]) {
+                    try {
+                        n.destroy();
+                    } catch (e) {}
+                }
+            }
+        } catch (e) {}
         try {
             const notifSection = Main.panel.statusArea.dateMenu?._messageList?._notificationSection;
             if (notifSection?.clear) notifSection.clear();
             else if (notifSection?._model?.clear) notifSection._model.clear();
         } catch (e) {}
+        this._suppressNotifRefresh = false;
         this._refreshNotifications();
     }
 

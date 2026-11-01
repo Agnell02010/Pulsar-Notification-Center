@@ -1555,15 +1555,38 @@ export function crea(nc, h) {
         }
     }
 
-    /* Reveal: the content fades in and the rows trickle in behind it. There is
-     * no scale here on purpose — the card itself is the pod, and stretching a
-     * pod makes Liquid Glass rebuild its blur region on every frame. Fase 3
-     * owns the motion polish, timings included. */
+    /* Reveal: the same calm motion as the Control Centre's detail sheet. The
+     * pod itself grows out of the card (the glass follows the scale, one
+     * rebuild per frame — the same the CC sheet pays) while the panel's
+     * content fades in on top of it — a pod's own opacity does not touch its
+     * Liquid Glass — and the rows keep trickling in behind it. A plain ease
+     * set before the first paint: no springs, no measuring mid-flight, so
+     * there is nothing to tremble. */
     function mostra() {
         if (!dettaglio)
             return;
-        dettaglio.opacity = 0;
-        dettaglio.ease({opacity: 255, duration: 200, mode: EASE});
+        try { dettaglio.opacity = 0; dettaglio.ease({opacity: 255, duration: 160, delay: 60, mode: Clutter.AnimationMode.EASE_OUT_QUAD}); } catch (e) {}
+        const c = card;
+        if (!c)
+            return;
+        try {
+            c.remove_all_transitions();
+            /* Grows out of the widget she pressed, the Control Centre's own
+             * reveal: the pivot sits where the widget body is inside the
+             * grown pod, and the panel starts at the widget's share and
+             * reaches its full size on the same ease the CC sheet uses. */
+            c.set_pivot_point(0.5, 0.42);
+            c.scale_x = 0.74;
+            c.scale_y = 0.74;
+            c.opacity = 0;
+            c.ease({opacity: 255, delay: 30, duration: 170, mode: Clutter.AnimationMode.EASE_OUT_QUAD});
+            c.ease({
+                scale_x: 1,
+                scale_y: 1,
+                duration: 240,
+                mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
+            });
+        } catch (e) {}
     }
 
     /* Instant reset, no animation: the drawer is closing, or another widget's
@@ -1590,6 +1613,17 @@ export function crea(nc, h) {
         dettaglio = null;
         morente = null;
         chiave = null;
+        /* The pod's scale and dim are not something an instant reset is
+         * allowed to leave behind (the reveal or the contract may have been
+         * interrupted midway). */
+        try {
+            if (card) {
+                card.remove_all_transitions();
+                card.scale_x = 1;
+                card.scale_y = 1;
+                card.opacity = 255;
+            }
+        } catch (e) {}
         vincola(card);
         card = null;
         for (const f of corpo) {
@@ -1753,9 +1787,26 @@ export function crea(nc, h) {
         morente = d;
         aggiornaFn = null;
         try {
-            d.ease({opacity: 0, duration: 80, mode: EASE});
+            d.remove_all_transitions();
+            d.ease({opacity: 0, duration: 90, mode: Clutter.AnimationMode.EASE_IN_QUAD});
         } catch (e) {}
-        delay(95, () => {
+        /* The pod contracts towards the card's head, content first, the
+         * mirror of the reveal; the class swap back happens right after, so
+         * the square takes over the same frame the widget content shows. */
+        try {
+            if (c) {
+                c.set_pivot_point(0.5, 0.42);
+                c.remove_all_transitions();
+                c.ease({opacity: 220, duration: 70, mode: Clutter.AnimationMode.EASE_IN_QUAD});
+                c.ease({
+                    scale_x: 0.82,
+                    scale_y: 0.82,
+                    duration: 190,
+                    mode: Clutter.AnimationMode.EASE_IN_OUT_CUBIC,
+                });
+            }
+        } catch (e) {}
+        delay(150, () => {
             if (gen !== miaGen)
                 return;   /* azzera() or a new panel took over */
             try {
@@ -1771,17 +1822,32 @@ export function crea(nc, h) {
                 if (d._gesto)
                     d._gesto.enabled = true;
             } catch (e) {}
+            /* Pod itself again: no half scale, no dim on the widget. */
+            try {
+                if (c) {
+                    c.remove_all_transitions();
+                    c.scale_x = 1;
+                    c.scale_y = 1;
+                    c.opacity = 255;
+                }
+            } catch (e) {}
             /* Back to the square size in the same frame the content comes
              * back: nothing is left inside that needs the room. */
             vincola(c);
             for (const x of cs) {
                 try {
+                    x.remove_all_transitions();
                     x.show();
+                    x.opacity = 0;
+                    try { x.ease({opacity: 255, duration: 220, mode: Clutter.AnimationMode.EASE_OUT_CUBIC}); } catch (e) {}
                 } catch (e) {}
             }
             for (const x of ns) {
                 try {
+                    x.remove_all_transitions();
                     x.show();
+                    x.opacity = 0;
+                    try { x.ease({opacity: 255, duration: 240, delay: 30, mode: Clutter.AnimationMode.EASE_OUT_CUBIC}); } catch (e) {}
                 } catch (e) {}
             }
             nascoste = [];
