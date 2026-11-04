@@ -436,6 +436,7 @@ class MacOSNotificationCenter {
         this._mprisShuffle = false;
         this._mprisLoop = 'None';
         this._dead = false;
+        this._startupRefreshPending = true;
 
         try {
             this._ifaceSettings = new Gio.Settings({schema_id: 'org.gnome.desktop.interface'});
@@ -445,7 +446,10 @@ class MacOSNotificationCenter {
 
         this._applyTransparentContainer(true);
         this._initCalendarProxy();
+        const uiStartedAt = debugOn() ? GLib.get_monotonic_time() : 0;
         this._buildUI();
+        if (uiStartedAt)
+            debug(`startup build UI: ${((GLib.get_monotonic_time() - uiStartedAt) / 1000).toFixed(2)}ms`);
 
         this._pan = null;
         this._loadPannelli();
@@ -909,6 +913,10 @@ class MacOSNotificationCenter {
         step('weather', () => this._refreshWeatherUI());
         step('battery', () => this._refreshBatteryAndSystem());
         debug(`refresh total: ${((GLib.get_monotonic_time() - t0) / 1000).toFixed(2)}ms`);
+        if (this._startupRefreshPending) {
+            this._startupRefreshPending = false;
+            debug(`startup first refresh: ${((GLib.get_monotonic_time() - t0) / 1000).toFixed(2)}ms`);
+        }
     }
 
     _startPolling() {
