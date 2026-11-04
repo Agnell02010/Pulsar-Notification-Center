@@ -14,17 +14,46 @@ import GLib from 'gi://GLib';
 
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
+const DEBUG_FLAG = '/tmp/pulsar-nc-debug';
+
+function debugStartupStartedAt() {
+    try {
+        return GLib.file_test(DEBUG_FLAG, GLib.FileTest.EXISTS)
+            ? GLib.get_monotonic_time()
+            : 0;
+    } catch (e) {
+        return 0;
+    }
+}
+
+function debugStartupTiming(label, startedAt) {
+    if (!startedAt)
+        return;
+    try {
+        if (GLib.file_test(DEBUG_FLAG, GLib.FileTest.EXISTS)) {
+            const elapsed = (GLib.get_monotonic_time() - startedAt) / 1000;
+            console.log(`pulsar-nc-dbg: startup ${label}: ${elapsed.toFixed(2)}ms`);
+        }
+    } catch (e) {
+        // Diagnostics must not interfere with enabling the extension.
+    }
+}
+
 export default class MacOSNotificationCenterExtension extends Extension {
     async enable() {
         let mod = null;
+        let importStartedAt = 0;
         try {
             const uri = Gio.File.new_for_path(
                 GLib.build_filenamev([this.path, 'nc.js'])).get_uri();
+            importStartedAt = debugStartupStartedAt();
             mod = await import(`${uri}?v=${Date.now()}`);
         } catch (e) {
+            debugStartupTiming('import nc.js failed', importStartedAt);
             console.error(`macos-nc: nc.js could not be loaded: ${e}`);
             return;
         }
+        debugStartupTiming('import nc.js', importStartedAt);
 
         try {
             this._nc = mod.crea({path: this.path});

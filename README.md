@@ -68,6 +68,29 @@ gnome-extensions enable  macos-notification-center@pulsar.local
 
 Only changes to `extension.js` or `metadata.json` need a logout/login.
 
+### Diagnosing startup lag
+
+The extension has opt-in startup timings for the dynamic `nc.js` import,
+building the widget UI, and the first refresh. They use the existing debug
+flag and write only to the GNOME Shell journal; no usage data or extra files
+are recorded:
+
+```bash
+touch /tmp/pulsar-nc-debug
+# If extension.js changed, log out and back in so GNOME Shell reloads it.
+# Otherwise, disable and enable the extension to repeat startup:
+gnome-extensions disable macos-notification-center@pulsar.local
+gnome-extensions enable  macos-notification-center@pulsar.local
+journalctl -b _COMM=gnome-shell -o cat | grep 'pulsar-nc-dbg:'
+rm -f /tmp/pulsar-nc-debug
+```
+
+Look for `startup import nc.js`, `startup build UI`, and `startup first
+refresh`; the existing `refresh ...` lines break the first refresh down by
+step. `extension.js` is cached by GNOME Shell, so the import timing will not
+appear with an older already-loaded entry point until after logout/login. Remove
+the flag after collecting the timings to disable diagnostics.
+
 You can check that `nc.js` and `extension.js` at least parse and load, without
 touching the running session, with `gjs` and stubbed `gi://` modules:
 
